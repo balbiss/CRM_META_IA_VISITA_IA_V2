@@ -27,6 +27,7 @@ import { followupRouter } from './routes/followup.js';
 import { sitesRouter } from './routes/sites.js';
 import { roletasRouter } from './routes/roletas.js';
 import { avisosCorretorRouter } from './routes/avisosCorretor.js';
+import { contatosWhatsappRouter } from './routes/contatosWhatsapp.js';
 import { verifyToken } from './lib/jwt.js';
 import { ensureBucket } from './lib/storage.js';
 import { bootstrapAdminPlataforma, varrerInadimplencia } from './lib/bootstrapPlataforma.js';
@@ -87,6 +88,7 @@ app.use('/api/tarefas', tarefasRouter(io));
 app.use('/api/followup', followupRouter(io));
 app.use('/api/sites', sitesRouter(io));
 app.use('/api/avisos-corretor', avisosCorretorRouter());
+app.use('/api/contatos-whatsapp', contatosWhatsappRouter(io));
 
 const port = Number(process.env.PORT) || 3001;
 

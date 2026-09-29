@@ -255,6 +255,34 @@ export const sessoesWhatsapp = pgTable('sessoes_whatsapp', {
   imobiliariaIdx: index('sessoes_whatsapp_imobiliaria_id_idx').on(table.imobiliariaId),
 }));
 
+/** Número desconhecido que falou com o WhatsApp de um corretor (modo 'corretor'). Não vira lead
+ *  sozinho: fica aqui até o corretor escolher "trazer pro CRM" ou "é pessoal". Só o próprio
+ *  corretor vê, e nenhum conteúdo de mensagem é guardado — só quem é e quando falou. */
+export const contatosPendentes = pgTable('contatos_pendentes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  corretorId: uuid('corretor_id').notNull().references(() => perfis.id, { onDelete: 'cascade' }),
+  sessaoWhatsappId: uuid('sessao_whatsapp_id').notNull().references(() => sessoesWhatsapp.id, { onDelete: 'cascade' }),
+  telefone: text('telefone').notNull(),
+  nome: text('nome'),
+  qtdMensagens: integer('qtd_mensagens').notNull().default(1),
+  ultimaMensagemEm: timestamp('ultima_mensagem_em', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  corretorTelefoneIdx: uniqueIndex('contatos_pendentes_corretor_telefone_idx').on(table.corretorId, table.telefone),
+}));
+
+/** Números que o corretor marcou como "pessoal": o espelhamento ignora pra sempre (nem pendente vira). */
+export const contatosIgnorados = pgTable('contatos_ignorados', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  corretorId: uuid('corretor_id').notNull().references(() => perfis.id, { onDelete: 'cascade' }),
+  telefone: text('telefone').notNull(),
+  nome: text('nome'),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  corretorTelefoneIdx: uniqueIndex('contatos_ignorados_corretor_telefone_idx').on(table.corretorId, table.telefone),
+}));
+
 export const mensagensWhatsapp = pgTable('mensagens_whatsapp', {
   id: uuid('id').primaryKey().defaultRandom(),
   leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),

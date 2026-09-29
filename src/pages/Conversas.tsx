@@ -11,6 +11,8 @@ import { uploadArquivo, tipoDeArquivo } from '../lib/upload';
 import { AnexoMensagem } from '../components/AnexoMensagem';
 import { AudioRecordButton } from '../components/AudioRecordButton';
 import { EmojiPicker } from '../components/EmojiPicker';
+import { ContatosPendentes, useContatosWhatsapp } from '../components/ContatosPendentes';
+import { apiFetch } from '../lib/api';
 
 export default function Conversas() {
   const allLeads = useAppStore(s => s.leads);
@@ -36,8 +38,27 @@ export default function Conversas() {
   const sendConv = useAppStore(s => s.sendConv);
   const openLead = useAppStore(s => s.openLead);
   const { isManager, meNome } = useRoleInfo();
+  const ask = useAppStore(s => s.ask);
+  const contatos = useContatosWhatsapp();
 
   const thread = (l: Lead) => chats[l.id] || [];
+
+  const marcarPessoal = (l: Lead) => {
+    ask(
+      'Essa conversa é pessoal?',
+      l.nome + ' sai do CRM (o lead e a conversa são apagados) e esse número nunca mais é espelhado. Dá pra desfazer depois em "Números pessoais", mas o que foi apagado não volta.',
+      'É pessoal',
+      async () => {
+        try {
+          await apiFetch('/api/contatos-whatsapp/leads/' + l.id + '/pessoal', token, { method: 'POST' });
+          backToList();
+          toast('Conversa removida do CRM');
+        } catch (e) {
+          toast((e as Error).message || 'Não foi possível marcar como pessoal');
+        }
+      },
+    );
+  };
 
   // Conversas com dado real (10k+ leads na base): só listar quem já teve alguma mensagem de
   // verdade, não todo mundo — senão a lista fica enorme e inútil (maioria nunca falou pelo CRM).
@@ -106,6 +127,7 @@ export default function Conversas() {
             )}
           </div>
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            <ContatosPendentes {...contatos} />
             {convBase.map(l => {
               const resumo = conversaPorLead.get(l.id);
               const legendaAnexo = resumo?.anexoTipo === 'imagem' ? 'Foto' : resumo?.anexoTipo === 'video' ? 'Vídeo' : resumo?.anexoTipo === 'documento' ? 'Documento' : resumo?.anexoTipo === 'audio' ? 'Áudio' : resumo?.texto;
@@ -162,6 +184,9 @@ export default function Conversas() {
                   </span>
                 </button>
                 <span style={css(canalPill(CL.canal))}>{CL.canal}</span>
+                {contatos.espelho && CL.canal === 'WhatsApp' && CL.corretor === meNome && (
+                  <button onClick={() => marcarPessoal(CL)} title="Tirar essa conversa do CRM (é pessoal)" style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', color: 'var(--muted)' }}>Conversa pessoal</button>
+                )}
                 <button onClick={() => openLead(CL.id, 'chat')} style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>Ver lead</button>
               </div>
               <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', minHeight: 0, padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { sessoesWhatsapp, imobiliarias, perfis, leads, colunasKanban, mensagensWhatsapp } from '../db/schema.js';
+import { sessoesWhatsapp, imobiliarias, perfis, leads, colunasKanban, mensagensWhatsapp, contatosPendentes, contatosIgnorados } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
 import { wahaConfigurado, criarSessao, pararSessao, statusSessao, qrSessao, webhookSecret, fotoPerfil, baixarMidiaMensagem } from '../lib/waha.js';
 import { uploadFile } from '../lib/storage.js';
@@ -15,7 +15,7 @@ import type { Server as SocketServer } from 'socket.io';
 const soDigitos = (s: string) => (s || '').replace(/[^0-9]/g, '');
 
 /** 5591982935558 -> (91) 98293-5558 ; formata BR quando dá, senão devolve o número cru. */
-function formatarTelefone(num: string): string {
+export function formatarTelefone(num: string): string {
   const d = soDigitos(num);
   const semPais = d.startsWith('55') && d.length >= 12 ? d.slice(2) : d;
   const m = semPais.match(/^(\d{2})(\d{4,5})(\d{4})$/);
@@ -121,8 +121,35 @@ export function whatsappRouter(io: SocketServer) {
       const pushName: string = (fromMe ? '' : (p.notifyName || p._data?.notifyName || info.PushName || p._data?.pushName || '')).trim();
       const nomePlaceholder = 'Contato ' + formatarTelefone(numero);
 
+      const espelhoDeCorretor = sessao.escopo === 'corretor' && !!sessao.corretorId;
+      if (espelhoDeCorretor) {
+        const ignorados = await db.select({ telefone: contatosIgnorados.telefone }).from(contatosIgnorados)
+          .where(eq(contatosIgnorados.corretorId, sessao.corretorId!));
+        if (ignorados.some(i => mesmoNumero(i.telefone, numero))) return;
+      }
+
       const candidatos = await db.select().from(leads).where(escopoLeads);
       let lead = candidatos.find(l => mesmoNumero(l.telefone, numero));
+
+      // WhatsApp pessoal do corretor: número desconhecido NÃO vira lead sozinho (pode ser família,
+      // amigo...). Fica na lista privada dele até ele decidir "trazer pro CRM" ou "é pessoal".
+      if (!lead && espelhoDeCorretor) {
+        if (!fromMe) {
+          await db.insert(contatosPendentes).values({
+            imobiliariaId: sessao.imobiliariaId, corretorId: sessao.corretorId!, sessaoWhatsappId: sessao.id,
+            telefone: numero, nome: pushName || null,
+          }).onConflictDoUpdate({
+            target: [contatosPendentes.corretorId, contatosPendentes.telefone],
+            set: {
+              qtdMensagens: sql`${contatosPendentes.qtdMensagens} + 1`,
+              ultimaMensagemEm: new Date(),
+              ...(pushName ? { nome: pushName } : {}),
+            },
+          });
+          io.to('imobiliaria:' + sessao.imobiliariaId).emit('pendentes:mudou', { corretorId: sessao.corretorId });
+        }
+        return;
+      }
 
       // sem lead e é mensagem RECEBIDA -> cria um lead novo na coluna "Lead Novo"
       if (!lead && !fromMe) {
