@@ -12,8 +12,18 @@
 
 **Pra quem:** Dono e Gerente configuram; corretor recebe.
 
-A roleta decide para qual corretor vai cada lead novo. Ela é justa: o lead sempre vai para quem
-está há **mais tempo sem receber**. Ninguém fura a fila e ninguém recebe dois seguidos fora da vez.
+A roleta decide para qual corretor vai cada lead novo. Ninguém fura a fila e ninguém recebe dois
+seguidos fora da vez. Ela funciona de dois jeitos, conforme o Aviso por WhatsApp (seção 2):
+
+- **Com o Aviso por WhatsApp ligado: fila fixa.** Um lead para cada, **na ordem da lista** (1, 2,
+  3… até o último) e depois volta para o 1º. A tela marca quem é o **PRÓXIMO** e quem **recebeu o
+  último**, então o corretor confere sozinho de quem é a vez. Só quem está **bloqueado** é pulado.
+  - Mudar a ordem pelas setas não faz ninguém perder a vez: o próximo é sempre quem vem depois
+    de quem recebeu por último.
+  - Tirar da roleta quem recebeu por último também não pula ninguém.
+  - Dois leads que chegam no mesmo segundo vão para duas pessoas diferentes, uma depois da outra.
+- **Sem o Aviso por WhatsApp:** o lead vai para o corretor **em plantão** que está há mais tempo
+  sem receber.
 
 Todo lead novo passa pela roleta, venha de onde vier: formulário do Facebook/Instagram, formulário
 do site ou uma mensagem nova no WhatsApp da imobiliária.

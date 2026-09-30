@@ -22,7 +22,7 @@ export type RoletaFinalidade = 'venda' | 'locacao' | 'ambos';
 export interface RoletaMembro { corretorId: string; nome: string; posicao: number; emPlantao: boolean; bloqueado: boolean }
 export interface RemoteRoleta {
   id: string; nome: string; ativa: boolean; ordem: number; padrao: boolean;
-  canais: string[]; finalidade: RoletaFinalidade; sessaoWhatsappId: string | null; numeroPrimeiroContatoId?: string | null;
+  canais: string[]; finalidade: RoletaFinalidade; sessaoWhatsappId: string | null; ultimoCorretorId?: string | null; numeroPrimeiroContatoId?: string | null;
   membros: RoletaMembro[];
 }
 export interface RemoteTemplate { id: string; titulo: string; texto: string; anexoUrl: string | null }

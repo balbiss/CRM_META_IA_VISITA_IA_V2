@@ -239,6 +239,9 @@ export const roletas = pgTable('roletas', {
   // Número central pelo qual o Agente de IA faz o PRIMEIRO CONTATO com leads de formulário
   // (Facebook/Instagram/Site) que caem nesta roleta. Sem ele: o 1º número conectado em que a IA atende.
   numeroPrimeiroContatoId: uuid('numero_primeiro_contato_id').references(() => sessoesWhatsapp.id, { onDelete: 'set null' }),
+  // Fila fixa (modo "avisar corretor por WhatsApp"): quem recebeu o último lead desta roleta.
+  // O próximo é quem vem depois dele na ordem (posição), dando a volta no fim da lista.
+  ultimoCorretorId: uuid('ultimo_corretor_id').references(() => perfis.id, { onDelete: 'set null' }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   imobIdx: index('roletas_imobiliaria_id_idx').on(table.imobiliariaId),
