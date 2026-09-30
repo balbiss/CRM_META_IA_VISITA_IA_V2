@@ -218,6 +218,13 @@ lead sem corretor**. Cliente antigo que volta a falar vai direto pro corretor de
     se despede com educação, sem dizer o motivo. Se a IA errou, qualquer corretor pode puxar o lead.
   - **Só etiquetar e seguir**: coloca a etiqueta escolhida e o lead segue normal pra roleta.
 - **Mensagem ao passar pro corretor**, **máximo de respostas da IA** e **tempos de espera**.
+- **Jeito humano**:
+  - **Espera antes de responder** (padrão 15 segundos): pra quem manda a mensagem em pedaços
+    ("oi" · "tudo bem?" · "vi o anúncio"), cada mensagem nova reinicia a contagem, e a IA responde
+    tudo de uma vez quando o cliente para de digitar.
+  - **Lida + "digitando…"**: depois da espera, a mensagem do cliente fica com o visto azul, aparece
+    "digitando…" por um tempo proporcional ao tamanho da resposta, e às vezes a resposta vem em dois
+    balões, como uma pessoa faria.
 
 ### Quando a IA passa o lead pra roleta
 

@@ -376,6 +376,10 @@ export const agentesIa = pgTable('agentes_ia', {
   primeiroContatoCanais: jsonb('primeiro_contato_canais').$type<string[]>().notNull().default([]),
   minutosSemResposta: integer('minutos_sem_resposta').notNull().default(20),
   minutosAbandono: integer('minutos_abandono').notNull().default(120),
+  // Jeito humano: segundos de silêncio do cliente antes de responder (junta mensagens picadas),
+  // e marcar como lido + "digitando…" proporcional ao tamanho da resposta.
+  esperaSegundos: integer('espera_segundos').notNull().default(15),
+  simularDigitacao: boolean('simular_digitacao').notNull().default(true),
   // Chave OpenAI própria da imobiliária (AES-256-GCM, mesmo esquema do token do Facebook).
   chaveCifrada: text('chave_cifrada'),
   chaveIv: text('chave_iv'),

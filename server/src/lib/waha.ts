@@ -143,17 +143,34 @@ export async function checarNumero(sessionName: string, numero: string): Promise
   }
 }
 
-/** Envia texto usando o chatId que o próprio WhatsApp resolve (check-exists, pode ser @lid) —
- *  evita o "no LID found" com contato que nunca falou com o número. Devolve o id da mensagem.
- *  Lança 'NUMERO_INEXISTENTE' se o número não tem WhatsApp. */
-export async function enviarTextoResolvido(sessionName: string, numero: string, texto: string): Promise<{ id: string | null }> {
+/** chatId que o próprio WhatsApp reconhece pra esse número (check-exists, pode vir @lid).
+ *  existe=false → o número não tem WhatsApp; null → não deu pra checar. */
+export async function resolverChatId(sessionName: string, numero: string): Promise<{ chatId: string; existe: boolean | null }> {
   const fone = numero.replace(/[^0-9]/g, '');
   const chk = await waha<{ numberExists?: boolean; chatId?: string }>(
     `/api/contacts/check-exists?phone=${encodeURIComponent(fone)}&session=${encodeURIComponent(sessionName)}`,
   ).catch(() => null);
-  if (chk && chk.numberExists === false) throw new Error('NUMERO_INEXISTENTE');
+  return { chatId: chk?.chatId || chatId(fone), existe: typeof chk?.numberExists === 'boolean' ? chk.numberExists : null };
+}
+
+/** Presença no chat: marcar como lido ("visto" azul), começar/parar o "digitando…". Best-effort. */
+export async function presenca(sessionName: string, chatIdAlvo: string, acao: 'visto' | 'digitando' | 'parar') {
+  const rota = acao === 'visto' ? '/api/sendSeen' : acao === 'digitando' ? '/api/startTyping' : '/api/stopTyping';
+  await waha(rota, { method: 'POST', body: { session: sessionName, chatId: chatIdAlvo } }).catch(() => {});
+}
+
+/** Envia texto usando o chatId que o próprio WhatsApp resolve (check-exists, pode ser @lid) —
+ *  evita o "no LID found" com contato que nunca falou com o número. Devolve o id da mensagem.
+ *  Lança 'NUMERO_INEXISTENTE' se o número não tem WhatsApp. */
+export async function enviarTextoResolvido(sessionName: string, numero: string, texto: string, chatIdPronto?: string): Promise<{ id: string | null }> {
+  let alvo = chatIdPronto;
+  if (!alvo) {
+    const r = await resolverChatId(sessionName, numero);
+    if (r.existe === false) throw new Error('NUMERO_INEXISTENTE');
+    alvo = r.chatId;
+  }
   const r = await waha<{ id?: string | { _serialized?: string }; key?: { id?: string } }>('/api/sendText', {
-    method: 'POST', body: { session: sessionName, chatId: chk?.chatId || chatId(fone), text: texto },
+    method: 'POST', body: { session: sessionName, chatId: alvo, text: texto },
   });
   const id = typeof r?.id === 'string' ? r.id : r?.id?._serialized || r?.key?.id || null;
   return { id };

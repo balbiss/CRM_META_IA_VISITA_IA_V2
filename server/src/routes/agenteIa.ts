@@ -38,6 +38,8 @@ const configSchema = z.object({
   primeiroContatoCanais: z.array(z.enum(['Facebook', 'Instagram', 'Site'])),
   minutosSemResposta: z.number().int().min(5).max(1440),
   minutosAbandono: z.number().int().min(15).max(2880),
+  esperaSegundos: z.number().int().min(3).max(120).default(15),
+  simularDigitacao: z.boolean().default(true),
   modelo: z.enum(['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini']),
   // undefined = mantém a chave atual; '' = remove; texto = troca.
   chaveOpenai: z.string().max(300).optional(),

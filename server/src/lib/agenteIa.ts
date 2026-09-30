@@ -4,7 +4,7 @@ import { db } from '../db/client.js';
 import { agentesIa, colunasKanban, iaTurnos, imobiliarias, leads, leadTags, mensagensWhatsapp, sessoesWhatsapp, tags, type CriterioIa, type PerguntaIa } from '../db/schema.js';
 import { registrarEvento } from './eventos.js';
 import { distribuirLead } from './roleta.js';
-import { enviarTextoResolvido } from './waha.js';
+import { enviarTextoResolvido, presenca, resolverChatId } from './waha.js';
 import { decifrar } from './crypto.js';
 
 /* Agente de IA (SDR).
@@ -96,12 +96,25 @@ export async function iniciarIa(io: SocketServer, imobiliariaId: string, leadId:
 
 /** Mensagem nova do cliente num lead que a IA está atendendo: junta as picadas e responde. */
 export async function mensagemDoCliente(io: SocketServer, leadId: string) {
-  await db.update(leads).set({
+  const [row] = await db.update(leads).set({
     iaMsgsCliente: sql`${leads.iaMsgsCliente} + 1`,
     iaUltimaAtividadeEm: new Date(),
     iaAguardandoDesde: sql`coalesce(${leads.iaAguardandoDesde}, now())`,
-  }).where(eq(leads.id, leadId));
-  agendar(io, leadId, DEBOUNCE_MS);
+  }).where(eq(leads.id, leadId)).returning({ imobiliariaId: leads.imobiliariaId });
+  // Cada mensagem nova reinicia a contagem: a IA só responde depois de X segundos de silêncio.
+  const [cfg] = row ? await db.select({ s: agentesIa.esperaSegundos }).from(agentesIa)
+    .where(eq(agentesIa.imobiliariaId, row.imobiliariaId)).limit(1) : [];
+  agendar(io, leadId, (cfg?.s ?? DEBOUNCE_MS / 1000) * 1000);
+}
+
+const dormir = (ms: number) => new Promise(res => setTimeout(res, ms));
+// ~18 caracteres por segundo, entre 1,8 s e 9 s — parece gente digitando, sem deixar o cliente esperando demais.
+const tempoDigitacao = (texto: string) => Math.min(9000, Math.max(1800, texto.length * 55));
+
+/** Quebra a resposta em até 3 balões (a IA separa com linha em branco), como alguém no WhatsApp. */
+function baloesDe(resposta: string) {
+  const partes = resposta.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+  return partes.length <= 3 ? partes : [...partes.slice(0, 2), partes.slice(2).join('\n\n')];
 }
 
 function agendar(io: SocketServer, leadId: string, ms: number) {
@@ -210,13 +223,13 @@ export async function temCentralConectada(imobiliariaId: string) {
   return !!s;
 }
 
-async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string) {
+async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string, chatIdPronto?: string) {
   const sessao = await sessaoCentral(lead);
   if (!sessao) throw new Error('nenhum número central conectado');
   const lista = ecos.get(lead.id) || [];
   lista.push({ texto, ate: Date.now() + 120000 });
   ecos.set(lead.id, lista);
-  const { id } = await enviarTextoResolvido(sessao.sessionName, lead.telefone, texto);
+  const { id } = await enviarTextoResolvido(sessao.sessionName, lead.telefone, texto, chatIdPronto);
   const [row] = await db.insert(mensagensWhatsapp).values({
     leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, ackStatus: 2, texto,
   }).onConflictDoNothing().returning();
@@ -320,14 +333,33 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       openaiKey,
     };
 
+    // Jeito humano: lê a mensagem (visto azul), respira, e fica "digitando…" enquanto a IA pensa.
+    let alvo: { sessao: string; chatId: string } | null = null;
+    if (cfg.simularDigitacao) {
+      const sessao = await sessaoCentral(lead);
+      if (sessao) {
+        const rc = await resolverChatId(sessao.sessionName, lead.telefone);
+        if (rc.existe !== false) {
+          alvo = { sessao: sessao.sessionName, chatId: rc.chatId };
+          if (evento === 'mensagem') {
+            await presenca(alvo.sessao, alvo.chatId, 'visto');
+            await dormir(1200);
+          }
+          await presenca(alvo.sessao, alvo.chatId, 'digitando');
+        }
+      }
+    }
+    const inicioDigitacao = Date.now();
+
     let r: RespostaN8n;
     try {
       r = await chamarN8n(payload);
     } catch (e1) {
-      await new Promise(res => setTimeout(res, 4000));
+      await dormir(4000);
       try {
         r = await chamarN8n(payload);
       } catch (e2) {
+        if (alvo) await presenca(alvo.sessao, alvo.chatId, 'parar');
         await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'passar:erro', erro: (e2 as Error).message, chaveSaas: !openaiKey });
         await passarParaRoleta(io, leadId, 'erro');
         return;
@@ -360,14 +392,24 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
 
     const resposta = (r.resposta || '').trim();
     let erroEnvio: string | null = null;
-    if (resposta) {
-      try {
-        await enviarPelaIa(io, lead, resposta);
-      } catch (e) {
-        erroEnvio = (e as Error).message;
-        if (erroEnvio === 'NUMERO_INEXISTENTE') decisao = 'passar:numero_invalido';
+    const baloes = resposta ? baloesDe(resposta) : [];
+    try {
+      for (let i = 0; i < baloes.length; i++) {
+        if (alvo) {
+          if (i > 0) await presenca(alvo.sessao, alvo.chatId, 'digitando');
+          // no 1º balão desconta o tempo que a IA já passou pensando (o "digitando…" já estava na tela)
+          const jaDigitou = i === 0 ? Date.now() - inicioDigitacao : 0;
+          await dormir(Math.max(0, tempoDigitacao(baloes[i]) - jaDigitou));
+          await presenca(alvo.sessao, alvo.chatId, 'parar');
+        }
+        await enviarPelaIa(io, lead, baloes[i], alvo?.chatId);
+        if (i < baloes.length - 1) await dormir(700);
       }
+    } catch (e) {
+      erroEnvio = (e as Error).message;
+      if (erroEnvio === 'NUMERO_INEXISTENTE') decisao = 'passar:numero_invalido';
     }
+    if (alvo && !baloes.length) await presenca(alvo.sessao, alvo.chatId, 'parar');
     if (decisao === 'passar:limite' && cfg.mensagemPassagem && !erroEnvio) {
       await enviarPelaIa(io, lead, cfg.mensagemPassagem).catch(() => {});
     }

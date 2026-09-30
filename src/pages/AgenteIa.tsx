@@ -10,6 +10,7 @@ type Config = {
   ativo: boolean; nomeAgente: string; tom: 'cordial' | 'formal' | 'descontraido'; apresentacao: string; instrucoesExtras: string;
   perguntas: Pergunta[]; etiquetas: EtiquetaIa[]; criterios: CriterioIa[]; mensagemPassagem: string; maxMensagens: number; atenderWhatsapp: boolean;
   primeiroContatoCanais: string[]; minutosSemResposta: number; minutosAbandono: number;
+  esperaSegundos: number; simularDigitacao: boolean;
   modelo: 'gpt-4.1-mini' | 'gpt-4.1' | 'gpt-4o-mini';
 };
 type Resposta = { liberada: boolean; usaChaveSaas: boolean; chaveFinal: string | null; config: Config | null; perguntasPadrao: Pergunta[] };
@@ -18,7 +19,8 @@ type Turno = { id: string; leadNome: string; entrada: string | null; resposta: s
 const PADRAO = (perguntas: Pergunta[]): Config => ({
   ativo: false, nomeAgente: 'Ana', tom: 'cordial', apresentacao: '', instrucoesExtras: '', perguntas, etiquetas: [], criterios: [],
   mensagemPassagem: 'Perfeito! Já passei suas informações para um dos nossos corretores, que vai falar com você em instantes.',
-  maxMensagens: 12, atenderWhatsapp: true, primeiroContatoCanais: [], minutosSemResposta: 20, minutosAbandono: 120, modelo: 'gpt-4.1-mini',
+  maxMensagens: 12, atenderWhatsapp: true, primeiroContatoCanais: [], minutosSemResposta: 20, minutosAbandono: 120,
+  esperaSegundos: 15, simularDigitacao: true, modelo: 'gpt-4.1-mini',
 });
 
 const DECISOES: Record<string, string> = {
@@ -52,7 +54,10 @@ export default function AgenteIa() {
 
   const carregar = () => apiFetch<Resposta>('/api/agente-ia', token).then(r => {
     setDados(r);
-    setCfg(r.config ? { ...r.config, etiquetas: r.config.etiquetas ?? [], criterios: r.config.criterios ?? [] } : PADRAO(r.perguntasPadrao));
+    setCfg(r.config ? {
+      ...r.config, etiquetas: r.config.etiquetas ?? [], criterios: r.config.criterios ?? [],
+      esperaSegundos: r.config.esperaSegundos ?? 15, simularDigitacao: r.config.simularDigitacao ?? true,
+    } : PADRAO(r.perguntasPadrao));
     setChave(undefined);
   }).catch(e => toast((e as Error).message));
 
@@ -194,6 +199,20 @@ export default function AgenteIa() {
               Canal desmarcado = o lead vai direto pra roleta, como hoje. A IA só atua no número central (nunca no WhatsApp pessoal
               de corretor) e só em lead sem corretor.
             </p>
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Jeito humano</p>
+            <label style={lbl}>Esperar quantos segundos de silêncio antes de responder</label>
+            <input type="number" style={{ ...inp, width: 120 }} min={3} max={120} value={cfg.esperaSegundos} onChange={e => set('esperaSegundos', Number(e.target.value))} />
+            <p style={{ margin: '6px 0 12px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              Pra quem manda a mensagem em pedaços ("oi" · "tudo bem?" · "vi o anúncio"): cada mensagem nova reinicia a contagem,
+              e a IA responde tudo de uma vez só quando o cliente para de digitar.
+            </p>
+            <label style={{ display: 'flex', gap: 8, fontSize: 13 }}>
+              <input type="checkbox" checked={cfg.simularDigitacao} onChange={e => set('simularDigitacao', e.target.checked)} />
+              Marcar como lida e mostrar "digitando…" antes de responder (tempo proporcional ao tamanho da resposta)
+            </label>
           </div>
 
           <div style={card}>
