@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { and, desc, eq } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
-import { contatosPendentes, contatosIgnorados, leads, colunasKanban, sessoesWhatsapp } from '../db/schema.js';
+import { contatosPendentes, contatosIgnorados, leads, colunasKanban, sessoesWhatsapp, mensagensWhatsapp } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
 import { registrarEvento } from '../lib/eventos.js';
+import { historicoConversa } from '../lib/waha.js';
 import { formatarTelefone } from './whatsapp.js';
 
 // Tudo aqui é do PRÓPRIO usuário logado (sub): nem dono/gerente enxergam os contatos
@@ -51,6 +52,30 @@ export function contatosWhatsappRouter(io: SocketServer) {
     registrarEvento(imobiliariaId, lead.id, 'criado', 'Trazido pro CRM pelo corretor a partir do WhatsApp dele', ator);
     io.to('imobiliaria:' + imobiliariaId).emit('lead:created', lead);
     io.to('imobiliaria:' + imobiliariaId).emit('pendentes:mudou', { corretorId: sub });
+
+    // Enquanto era pendente nada do conteúdo foi guardado; agora que o corretor disse que é
+    // cliente, puxa o histórico recente direto do WhatsApp pra conversa já aparecer completa.
+    const [sessao] = await db.select({ nome: sessoesWhatsapp.sessionName }).from(sessoesWhatsapp)
+      .where(eq(sessoesWhatsapp.id, p.sessaoWhatsappId)).limit(1);
+    const historico = sessao ? await historicoConversa(sessao.nome, p.telefone) : [];
+    const linhas = historico
+      .map(m => ({
+        leadId: lead.id,
+        direcao: (m.fromMe ? 'out' : 'in') as 'out' | 'in',
+        canal: 'corretor' as const,
+        waMessageId: m.id,
+        ackStatus: m.fromMe ? 2 : null,
+        enviadoPor: m.fromMe ? sub : null,
+        texto: m.body || (m.hasMedia ? 'Anexo (abra no WhatsApp pra ver)' : null),
+        lida: true,
+        enviadoEm: new Date(m.timestamp * 1000),
+      }))
+      .filter(m => m.texto);
+    if (linhas.length) {
+      const inseridas = await db.insert(mensagensWhatsapp).values(linhas).onConflictDoNothing().returning();
+      const ultima = inseridas.sort((a, b) => b.enviadoEm.getTime() - a.enviadoEm.getTime())[0];
+      if (ultima) io.to('imobiliaria:' + imobiliariaId).emit('mensagem:created', ultima);
+    }
     res.status(201).json(lead);
   });
 

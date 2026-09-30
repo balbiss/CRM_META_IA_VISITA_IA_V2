@@ -152,8 +152,10 @@ Quando um número que não é lead manda mensagem, ele aparece para o corretor e
 Gerente. Aparece só o nome e o número, nunca o conteúdo.
 
 Para cada contato, o corretor escolhe:
-- **Trazer pro CRM**: é um cliente. Vira lead dele, na coluna "Lead Novo", e dali pra frente a
-  conversa é espelhada.
+- **Trazer pro CRM**: é um cliente. Vira lead dele, na coluna "Lead Novo", e a conversa aparece em
+  **Conversas** já com as últimas mensagens trocadas (até 30), puxadas do WhatsApp na hora. Dali pra
+  frente, tudo é espelhado. Fotos, áudios e arquivos antigos aparecem como "Anexo (abra no WhatsApp
+  pra ver)"; os novos chegam normalmente.
 - **É pessoal**: família, amigo etc. O número **nunca mais aparece** no CRM.
 
 Se não escolher nada, o contato só fica parado na lista dele.

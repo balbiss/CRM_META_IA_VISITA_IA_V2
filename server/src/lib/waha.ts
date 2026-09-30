@@ -143,6 +143,26 @@ export async function checarNumero(sessionName: string, numero: string): Promise
   }
 }
 
+export type MensagemHistorico = { id: string; timestamp: number; fromMe: boolean; body?: string | null; hasMedia?: boolean };
+
+/** Últimas mensagens de uma conversa, direto do WhatsApp (mais nova primeiro). Usa o chatId
+ *  resolvido pelo check-exists (pode ser @lid), que é o que o WhatsApp de fato reconhece. */
+export async function historicoConversa(sessionName: string, numero: string, limite = 30): Promise<MensagemHistorico[]> {
+  try {
+    const fone = numero.replace(/[^0-9]/g, '');
+    const chk = await waha<{ chatId?: string }>(
+      `/api/contacts/check-exists?phone=${encodeURIComponent(fone)}&session=${encodeURIComponent(sessionName)}`,
+    ).catch(() => null);
+    const id = chk?.chatId || chatId(fone);
+    const msgs = await waha<MensagemHistorico[]>(
+      `/api/${sessionName}/chats/${encodeURIComponent(id)}/messages?limit=${limite}&downloadMedia=false`,
+    );
+    return Array.isArray(msgs) ? msgs : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Baixa a mídia de uma mensagem recebida: pede pro WAHA baixar (downloadMedia=true) e puxa
  *  o arquivo do storage local do WAHA (que exige a X-Api-Key). */
 export async function baixarMidiaMensagem(sessionName: string, chatId: string, msgId: string): Promise<{ buffer: Buffer; mimetype: string; filename: string | null } | null> {
