@@ -77,6 +77,7 @@ export interface RemoteMensagem {
   id: string; leadId: string; direcao: 'in' | 'out'; texto: string | null;
   anexoUrl: string | null; anexoTipo: AnexoTipo | null; anexoNome?: string | null; canal: 'corretor' | 'followup' | 'ia'; enviadoEm: string;
   ackStatus?: number | null;
+  transcricao?: string | null;
 }
 
 /** Resumo da última mensagem de um lead — usado só pra saber QUAIS leads já tiveram interação
@@ -91,7 +92,7 @@ function mapRemoteMensagem(r: RemoteMensagem): ChatMsg {
   const off = Math.max(0, Math.floor((Date.now() - dt.getTime()) / 86400000));
   return {
     id: r.id, side: r.direcao, texto: r.texto ?? '', hora: dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-    bot: r.canal === 'followup', ia: r.canal === 'ia', off, anexoUrl: r.anexoUrl, anexoTipo: r.anexoTipo, anexoNome: r.anexoNome ?? undefined, ack: r.ackStatus ?? undefined,
+    bot: r.canal === 'followup', ia: r.canal === 'ia', off, anexoUrl: r.anexoUrl, anexoTipo: r.anexoTipo, anexoNome: r.anexoNome ?? undefined, ack: r.ackStatus ?? undefined, transcricao: r.transcricao ?? undefined,
   };
 }
 

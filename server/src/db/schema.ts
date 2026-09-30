@@ -319,6 +319,8 @@ export const mensagensWhatsapp = pgTable('mensagens_whatsapp', {
   anexoTipo: text('anexo_tipo'), // 'imagem' | 'video' | 'audio' | 'documento'
   // Nome original do arquivo (importante pra PDF — o lead manda "Contrato.pdf" e tem que baixar com esse nome).
   anexoNome: text('anexo_nome'),
+  // Áudio do cliente transcrito (feito quando o Agente de IA está atendendo) — a IA lê e o corretor também.
+  transcricao: text('transcricao'),
   canal: mensagemCanalEnum('canal').notNull().default('corretor'),
   enviadoEm: timestamp('enviado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({

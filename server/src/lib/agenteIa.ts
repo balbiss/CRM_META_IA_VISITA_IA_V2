@@ -306,6 +306,63 @@ async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string, chatIdP
   if (row) io.to('imobiliaria:' + lead.imobiliariaId).emit('mensagem:created', row);
 }
 
+/** Transcreve o áudio do cliente (workflow n8n separado, mesma chave do agente). null se não der. */
+export async function transcreverAudio(imobiliariaId: string, audioUrl: string): Promise<string | null> {
+  const url = process.env.N8N_AGENTE_IA_TRANSCRICAO_URL;
+  if (!url) return null;
+  const conf = await configIa(imobiliariaId);
+  if (!conf) return null;
+  let openaiKey: string | null = null;
+  if (!conf.usaChaveSaas) {
+    const { cfg } = conf;
+    if (!cfg.chaveCifrada || !cfg.chaveIv || !cfg.chaveTag) return null;
+    openaiKey = decifrar({ cifrado: cfg.chaveCifrada, iv: cfg.chaveIv, tag: cfg.chaveTag });
+  }
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const r = await fetch(url, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-agente-secret': process.env.N8N_AGENTE_IA_SECRET || '' },
+      body: JSON.stringify({ audioUrl, openaiKey }),
+    });
+    const j = await r.json() as { ok?: boolean; texto?: string };
+    return j.ok && j.texto?.trim() ? j.texto.trim() : null;
+  } catch (e) {
+    console.error('agente IA transcrição:', (e as Error).message);
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+const UF_DDD: Record<string, string> = {
+  11: 'SP — São Paulo capital', 12: 'SP — Vale do Paraíba (São José dos Campos)', 13: 'SP — Baixada Santista (Santos)', 14: 'SP — Bauru',
+  15: 'SP — Sorocaba', 16: 'SP — Ribeirão Preto', 17: 'SP — São José do Rio Preto', 18: 'SP — Presidente Prudente', 19: 'SP — Campinas',
+  21: 'RJ — Rio de Janeiro', 22: 'RJ — Norte Fluminense / Região dos Lagos', 24: 'RJ — Sul Fluminense / Serrana', 27: 'ES — Vitória', 28: 'ES — Sul do Espírito Santo',
+  31: 'MG — Belo Horizonte', 32: 'MG — Juiz de Fora', 33: 'MG — Governador Valadares', 34: 'MG — Triângulo Mineiro (Uberlândia)', 35: 'MG — Sul de Minas',
+  37: 'MG — Centro-Oeste de Minas (Divinópolis)', 38: 'MG — Norte de Minas (Montes Claros)',
+  41: 'PR — Curitiba', 42: 'PR — Ponta Grossa', 43: 'PR — Londrina', 44: 'PR — Maringá', 45: 'PR — Oeste do Paraná (Cascavel / Foz do Iguaçu)', 46: 'PR — Sudoeste do Paraná',
+  47: 'SC — Norte de SC (Joinville / Blumenau / Balneário Camboriú)', 48: 'SC — Florianópolis', 49: 'SC — Oeste de SC (Chapecó / Lages)',
+  51: 'RS — Porto Alegre', 53: 'RS — Pelotas', 54: 'RS — Serra Gaúcha (Caxias do Sul)', 55: 'RS — Centro/Oeste do RS (Santa Maria)',
+  61: 'DF — Brasília', 62: 'GO — Goiânia', 63: 'TO — Tocantins', 64: 'GO — Sul de Goiás (Rio Verde)', 65: 'MT — Cuiabá', 66: 'MT — interior do Mato Grosso',
+  67: 'MS — Mato Grosso do Sul', 68: 'AC — Acre', 69: 'RO — Rondônia',
+  71: 'BA — Salvador', 73: 'BA — Sul da Bahia (Ilhéus / Itabuna)', 74: 'BA — Norte da Bahia (Juazeiro)', 75: 'BA — Feira de Santana', 77: 'BA — Oeste/Sudoeste da Bahia', 79: 'SE — Sergipe',
+  81: 'PE — Recife', 82: 'AL — Alagoas', 83: 'PB — Paraíba', 84: 'RN — Rio Grande do Norte', 85: 'CE — Fortaleza', 86: 'PI — Teresina', 87: 'PE — Sertão de Pernambuco',
+  88: 'CE — interior do Ceará', 89: 'PI — interior do Piauí',
+  91: 'PA — Belém e região', 92: 'AM — Manaus', 93: 'PA — Oeste do Pará (Santarém)', 94: 'PA — Sudeste do Pará (Marabá)', 95: 'RR — Roraima', 96: 'AP — Amapá',
+  97: 'AM — interior do Amazonas', 98: 'MA — São Luís', 99: 'MA — interior do Maranhão',
+};
+
+/** Pista de região pelo DDD do telefone (é só pista: a pessoa pode morar em outro lugar). */
+export function regiaoPorDDD(telefone: string): string | null {
+  const d = telefone.replace(/\D/g, '');
+  if (d.length >= 12 && d.startsWith('55')) return UF_DDD[d.slice(2, 4)] ? 'DDD ' + d.slice(2, 4) + ' (' + UF_DDD[d.slice(2, 4)] + ')' : null;
+  if (d.length === 10 || d.length === 11) return UF_DDD[d.slice(0, 2)] ? 'DDD ' + d.slice(0, 2) + ' (' + UF_DDD[d.slice(0, 2)] + ')' : null;
+  if (d.length > 11 && !d.startsWith('55')) return 'número de fora do Brasil';
+  return null;
+}
+
 type RespostaN8n = {
   ok?: boolean; resposta?: string; campos?: Record<string, unknown>; encerrar?: boolean; pediuHumano?: boolean; semInteresse?: boolean;
   etiquetas?: string[]; desqualificacao?: string | null; tentativaResgate?: string | null; textoDesqualificacao?: string | null;
@@ -356,12 +413,13 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const { cfg } = conf;
     const perguntas = perguntasDe(cfg);
 
-    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo })
+    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo, transcricao: mensagensWhatsapp.transcricao })
       .from(mensagensWhatsapp).where(eq(mensagensWhatsapp.leadId, leadId))
       .orderBy(desc(mensagensWhatsapp.enviadoEm)).limit(20)).reverse();
     const historico = msgs.map(m => ({
       papel: m.direcao === 'in' ? 'cliente' : 'atendente',
-      texto: m.texto || (m.anexoTipo ? '[o cliente mandou ' + m.anexoTipo + ']' : ''),
+      texto: [m.texto, m.transcricao ? '[áudio]: ' + m.transcricao : null].filter(Boolean).join('\n')
+        || (m.anexoTipo ? '[o cliente mandou ' + (m.anexoTipo === 'audio' ? 'um áudio que não deu pra entender' : m.anexoTipo) + ']' : ''),
     })).filter(m => m.texto);
     let ultimaSaida = -1;
     historico.forEach((m, i) => { if (m.papel === 'atendente') ultimaSaida = i; });
@@ -403,7 +461,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       // marcadores internos (_tentou_...) não vão como "o que já sabemos" do cliente
       dados: Object.fromEntries(Object.entries(dadosAtuais).filter(([k]) => !k.startsWith(TENTOU))),
       faltando: faltandoAntes,
-      lead: { nome: lead.nome, canal: lead.canal, campanha: lead.campanha, imovel: lead.imovelTitulo },
+      lead: { nome: lead.nome, canal: lead.canal, campanha: lead.campanha, imovel: lead.imovelTitulo, regiaoTelefone: regiaoPorDDD(lead.telefone) },
       historico,
       openaiKey,
     };

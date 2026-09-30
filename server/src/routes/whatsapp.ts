@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { wahaConfigurado, criarSessao, pararSessao, statusSessao, qrSessao, webhookSecret, fotoPerfil, baixarMidiaMensagem } from '../lib/waha.js';
 import { uploadFile } from '../lib/storage.js';
 import { distribuirLead } from '../lib/roleta.js';
-import { configIa, iniciarIa, ehEcoDaIa, pausarIa, mensagemDoCliente, clienteAguardandoCorretor } from '../lib/agenteIa.js';
+import { configIa, iniciarIa, ehEcoDaIa, pausarIa, mensagemDoCliente, clienteAguardandoCorretor, transcreverAudio } from '../lib/agenteIa.js';
 import { enviarPush } from '../lib/push.js';
 import { registrarEvento } from '../lib/eventos.js';
 import { pausarPorResposta } from '../lib/followup.js';
@@ -248,6 +248,12 @@ export function whatsappRouter(io: SocketServer) {
         }
       }
 
+      // Áudio do cliente num lead que o Agente de IA está atendendo: transcreve antes de gravar
+      // (a IA precisa do conteúdo, e a transcrição também aparece pro corretor no CRM).
+      const transcricao = !fromMe && anexoTipo === 'audio' && anexoUrl && lead.iaStatus === 'atendendo'
+        ? await transcreverAudio(sessao.imobiliariaId, anexoUrl)
+        : null;
+
       const inseridas = await db.insert(mensagensWhatsapp).values({
         leadId: lead.id,
         direcao: fromMe ? 'out' : 'in',
@@ -259,6 +265,7 @@ export function whatsappRouter(io: SocketServer) {
         anexoUrl,
         anexoTipo,
         anexoNome,
+        transcricao,
       }).onConflictDoNothing().returning(); // ON CONFLICT DO NOTHING (sem target — casa com o índice parcial)
 
       const msg = inseridas[0];

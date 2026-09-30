@@ -233,6 +233,28 @@ lead sem corretor**. Cliente antigo que volta a falar vai direto pro corretor de
     "digitando…" por um tempo proporcional ao tamanho da resposta, e às vezes a resposta vem em dois
     balões, como uma pessoa faria.
 
+### Áudio e região
+
+- **Áudio:** se o cliente manda áudio enquanto a IA atende, ela **entende o áudio** e responde ao
+  que foi dito. A **transcrição aparece embaixo do áudio** no CRM ("Transcrição: ..."), o que ajuda
+  o corretor depois. Se o áudio não der pra entender, a IA pede com gentileza pra escrever.
+- **Região pelo DDD:** a IA recebe a região do DDD do telefone (ex.: "91 = Belém e região") como
+  **pista**, pra conversar com naturalidade ("procura aqui em Belém mesmo?"). Ela nunca afirma onde
+  a pessoa mora nem preenche a região só pelo DDD. Localização por IP não existe no WhatsApp.
+
+### Depois que a IA passa o lead
+
+A IA avisa que vai encaminhar, e o sistema conta ao cliente a situação real:
+- **Um corretor pegou:** "Quem vai continuar seu atendimento é o Bruno, já já fala com você por aqui".
+- **Dentro do horário, mas ninguém livre:** "Nossos corretores estão em atendimento agora, mas assim
+  que um ficar livre ele fala com você".
+- **Fora do horário:** informa o horário de atendimento da imobiliária (o mesmo de Ajustes →
+  Atendimento) e que um corretor fala com ele quando abrir.
+
+O lead **sempre** é transferido, mesmo fora do horário: ele fica na fila e cai pro próximo
+corretor que entrar de plantão. Se o cliente escrever de novo enquanto ninguém pegou, o sistema
+responde "Recebi sua mensagem..." (no máximo uma vez por hora; "ok" e "obrigado" não recebem resposta).
+
 ### Quando a IA passa o lead pra roleta
 
 - Terminou as perguntas obrigatórias e se despediu;

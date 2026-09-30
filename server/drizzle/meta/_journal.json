@@ -232,6 +232,13 @@
       "when": 1790733403460,
       "tag": "0032_magical_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790733764463,
+      "tag": "0033_plain_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }
