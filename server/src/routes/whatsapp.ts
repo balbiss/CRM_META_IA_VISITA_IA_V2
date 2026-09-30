@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { wahaConfigurado, criarSessao, pararSessao, statusSessao, qrSessao, webhookSecret, fotoPerfil, baixarMidiaMensagem } from '../lib/waha.js';
 import { uploadFile } from '../lib/storage.js';
 import { distribuirLead } from '../lib/roleta.js';
-import { configIa, iniciarIa, ehEcoDaIa, pausarIa, mensagemDoCliente } from '../lib/agenteIa.js';
+import { configIa, iniciarIa, ehEcoDaIa, pausarIa, mensagemDoCliente, clienteAguardandoCorretor } from '../lib/agenteIa.js';
 import { enviarPush } from '../lib/push.js';
 import { registrarEvento } from '../lib/eventos.js';
 import { pausarPorResposta } from '../lib/followup.js';
@@ -268,6 +268,7 @@ export function whatsappRouter(io: SocketServer) {
       // lead respondeu -> pausa a régua de follow-up (o corretor assume)
       if (!fromMe) void pausarPorResposta(io, sessao.imobiliariaId, lead.id);
       if (!fromMe && lead.iaStatus === 'atendendo') void mensagemDoCliente(io, lead.id);
+      if (!fromMe && lead.iaStatus === 'transferido') void clienteAguardandoCorretor(io, lead, texto);
 
       // mensagem RECEBIDA -> push pro corretor dono do lead (mesmo com o CRM fechado)
       if (!fromMe && lead.corretorId) {

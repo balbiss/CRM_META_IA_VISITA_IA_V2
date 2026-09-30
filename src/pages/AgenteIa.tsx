@@ -18,7 +18,7 @@ type Turno = { id: string; leadNome: string; entrada: string | null; resposta: s
 
 const PADRAO = (perguntas: Pergunta[]): Config => ({
   ativo: false, nomeAgente: 'Ana', tom: 'cordial', apresentacao: '', instrucoesExtras: '', perguntas, etiquetas: [], criterios: [],
-  mensagemPassagem: 'Perfeito! Já passei suas informações para um dos nossos corretores, que vai falar com você em instantes.',
+  mensagemPassagem: 'Perfeito! Vou passar suas informações para um dos nossos corretores.',
   maxMensagens: 12, atenderWhatsapp: true, primeiroContatoCanais: [], minutosSemResposta: 20, minutosAbandono: 120,
   esperaSegundos: 8, simularDigitacao: true, modelo: 'gpt-4.1-mini', despedidaModo: 'ia',
   mensagemDesqualificado: 'Obrigada pelas informações! Registrei tudo aqui e, se surgir uma opção que combine com o que você procura, nossa equipe entra em contato. 😊',

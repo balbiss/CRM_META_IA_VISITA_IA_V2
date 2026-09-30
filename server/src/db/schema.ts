@@ -373,7 +373,7 @@ export const agentesIa = pgTable('agentes_ia', {
   perguntas: jsonb('perguntas').$type<PerguntaIa[]>().notNull().default([]),
   etiquetas: jsonb('etiquetas').$type<EtiquetaIa[]>().notNull().default([]),
   criterios: jsonb('criterios').$type<CriterioIa[]>().notNull().default([]),
-  mensagemPassagem: text('mensagem_passagem').notNull().default('Perfeito! Já passei suas informações para um dos nossos corretores, que vai falar com você em instantes.'),
+  mensagemPassagem: text('mensagem_passagem').notNull().default('Perfeito! Vou passar suas informações para um dos nossos corretores.'),
   maxMensagens: integer('max_mensagens').notNull().default(12),
   atenderWhatsapp: boolean('atender_whatsapp').notNull().default(true),
   // Canais de formulário em que a IA faz o PRIMEIRO contato ('Facebook' | 'Instagram' | 'Site').

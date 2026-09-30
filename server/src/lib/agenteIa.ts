@@ -1,7 +1,11 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
-import { agentesIa, colunasKanban, iaTurnos, imobiliarias, leads, leadTags, mensagensWhatsapp, sessoesWhatsapp, tags, type CriterioIa, type PerguntaIa } from '../db/schema.js';
+import {
+  agentesIa, colunasKanban, iaTurnos, imobiliarias, leads, leadTags, mensagensWhatsapp, perfis, sessoesWhatsapp, tags,
+  HORARIO_ATENDIMENTO_PADRAO, type CriterioIa, type DiaAtendimento, type PerguntaIa,
+} from '../db/schema.js';
+import { isBusinessHoursOpen } from './schedule.js';
 import { registrarEvento } from './eventos.js';
 import { distribuirLead } from './roleta.js';
 import { enviarTextoResolvido, presenca, resolverChatId } from './waha.js';
@@ -157,6 +161,65 @@ function detectarFinalidade(valor?: string): 'venda' | 'locacao' | null {
   return null;
 }
 
+const DIAS_CLIENTE = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const hora = (min: number) => Math.floor(min / 60) + 'h' + (min % 60 ? String(min % 60).padStart(2, '0') : '');
+
+/** "seg a sex das 8h às 18h20, sáb das 8h às 12h" — agrupa dias seguidos com o mesmo horário. */
+function horarioParaCliente(dias: DiaAtendimento[] | null | undefined) {
+  const cfg = dias && dias.length === 7 ? dias : HORARIO_ATENDIMENTO_PADRAO;
+  const ordem = [1, 2, 3, 4, 5, 6, 0];
+  const grupos: { de: number; ate: number; abre: number; fecha: number }[] = [];
+  for (const i of ordem) {
+    const d = cfg[i];
+    if (!d?.ativo) continue;
+    const ult = grupos[grupos.length - 1];
+    if (ult && ult.abre === d.abreMin && ult.fecha === d.fechaMin && ordem.indexOf(ult.ate) === ordem.indexOf(i) - 1) ult.ate = i;
+    else grupos.push({ de: i, ate: i, abre: d.abreMin, fecha: d.fechaMin });
+  }
+  return grupos.map(g => (g.de === g.ate ? DIAS_CLIENTE[g.de] : DIAS_CLIENTE[g.de] + ' a ' + DIAS_CLIENTE[g.ate])
+    + ' das ' + hora(g.abre) + ' às ' + hora(g.fecha)).join(', ');
+}
+
+/** Depois de entregar pra roleta, conta ao cliente a situação REAL (quem vai atender, ou quando). */
+async function avisarSituacao(io: SocketServer, leadId: string, corretorId: string | null) {
+  const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+  if (!lead) return;
+  let texto: string;
+  if (corretorId) {
+    const [c] = await db.select({ nome: perfis.nome }).from(perfis).where(eq(perfis.id, corretorId)).limit(1);
+    const primeiro = (c?.nome || '').trim().split(/\s+/)[0];
+    texto = primeiro
+      ? 'Quem vai continuar seu atendimento é ' + primeiro + ', já já fala com você por aqui 😊'
+      : 'Um dos nossos corretores já vai falar com você por aqui 😊';
+  } else {
+    const [imob] = await db.select({ h: imobiliarias.horarioAtendimento }).from(imobiliarias).where(eq(imobiliarias.id, lead.imobiliariaId)).limit(1);
+    texto = isBusinessHoursOpen(imob?.h)
+      ? 'Nossos corretores estão em atendimento agora, mas assim que um ficar livre ele fala com você por aqui 😊'
+      : 'Nosso atendimento é ' + horarioParaCliente(imob?.h) + '. Assim que abrirmos, um corretor fala com você por aqui 😊';
+  }
+  await dormir(1500);
+  await enviarPelaIa(io, lead, texto).catch(e => console.error('agente IA situação:', (e as Error).message));
+}
+
+// Resposta a quem escreve de novo enquanto espera um corretor: no máximo 1 por hora, e não
+// responde agradecimento/confirmação ("ok", "tá bom", "obrigado"), que ninguém responderia.
+const ultimaEspera = new Map<string, number>();
+const SO_CONFIRMACAO = /^(ok+|okay|blz|beleza|t[aá] ?bom|t[aá] ?certo|certo|combinado|obrigad[oa]|obg|valeu|vlw|show|perfeito|sim|👍|🙏|😊|❤️|🙂)[\s!.]*$/i;
+
+export async function clienteAguardandoCorretor(io: SocketServer, lead: Lead, texto: string | null) {
+  if (lead.corretorId || lead.iaStatus !== 'transferido' || lead.motivoDescarte) return;
+  if (!texto || SO_CONFIRMACAO.test(texto.trim())) return;
+  const ult = ultimaEspera.get(lead.id) || 0;
+  if (Date.now() - ult < 60 * 60000) return;
+  ultimaEspera.set(lead.id, Date.now());
+  const [imob] = await db.select({ h: imobiliarias.horarioAtendimento }).from(imobiliarias).where(eq(imobiliarias.id, lead.imobiliariaId)).limit(1);
+  const resposta = isBusinessHoursOpen(imob?.h)
+    ? 'Recebi sua mensagem! Assim que um corretor ficar livre ele fala com você por aqui 😊'
+    : 'Recebi sua mensagem! Nosso atendimento é ' + horarioParaCliente(imob?.h) + ', assim que abrirmos um corretor fala com você 😊';
+  await dormir(3000);
+  await enviarPelaIa(io, lead, resposta).catch(() => {});
+}
+
 /** Fim do atendimento da IA: grava o resumo e entrega pra roleta de sempre. */
 export async function passarParaRoleta(io: SocketServer, leadId: string, motivo: keyof typeof MOTIVOS | string) {
   const t = timers.get(leadId);
@@ -175,7 +238,10 @@ export async function passarParaRoleta(io: SocketServer, leadId: string, motivo:
     'Agente de IA passou pra roleta — ' + (MOTIVOS[motivo] || motivo) + (resumo ? '. ' + resumo.replace(/\n/g, ' · ') : ''),
     'Agente de IA');
   io.to('imobiliaria:' + lead.imobiliariaId).emit('lead:updated', row);
-  await distribuirLead(io, lead.imobiliariaId, leadId);
+  const corretorId = await distribuirLead(io, lead.imobiliariaId, leadId);
+  // O cliente estava conversando: conta o que acontece agora. (Sem resposta/abandono = ele não
+  // está esperando nada; manual/IA desligada = a equipe está no controle.)
+  if (['completo', 'pediu_humano', 'limite', 'erro'].includes(motivo)) void avisarSituacao(io, leadId, corretorId);
 }
 
 function resumoDe(perguntas: PerguntaIa[], dados: Record<string, string>) {
@@ -242,7 +308,8 @@ async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string, chatIdP
 
 type RespostaN8n = {
   ok?: boolean; resposta?: string; campos?: Record<string, unknown>; encerrar?: boolean; pediuHumano?: boolean; semInteresse?: boolean;
-  etiquetas?: string[]; desqualificacao?: string | null; tentativaResgate?: string | null; tokens?: number; erro?: string;
+  etiquetas?: string[]; desqualificacao?: string | null; tentativaResgate?: string | null; textoDesqualificacao?: string | null;
+  tokens?: number; erro?: string;
 };
 
 async function chamarN8n(payload: unknown): Promise<RespostaN8n> {
@@ -400,9 +467,12 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     else if (faltando.length === 0 && r.encerrar) decisao = 'passar:completo';
     else if (turnos >= cfg.maxMensagens) decisao = 'passar:limite';
 
-    // Desqualificado no modo "texto fixo": vai a mensagem cadastrada, não a da IA.
-    const despedidaFixa = decisao.startsWith('descartar:') && cfg.despedidaModo === 'fixa';
-    const resposta = despedidaFixa ? cfg.mensagemDesqualificado.trim() : (r.resposta || '').trim();
+    // O texto que o cliente lê é escolhido pela DECISÃO que o CRM executa, nunca solto: a IA já
+    // escreveu "vou passar pro corretor" e marcou desqualificação ao mesmo tempo. Descartou →
+    // despedida de descarte (a da IA, escrita só pra esse caso, ou o texto fixo); senão → resposta normal.
+    const resposta = decisao.startsWith('descartar:')
+      ? ((cfg.despedidaModo === 'ia' && r.textoDesqualificacao?.trim()) || cfg.mensagemDesqualificado).trim()
+      : (r.resposta || '').trim();
     let erroEnvio: string | null = null;
     const baloes = resposta ? baloesDe(resposta) : [];
     try {
