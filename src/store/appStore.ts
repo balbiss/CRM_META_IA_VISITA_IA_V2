@@ -30,7 +30,7 @@ export interface RemoteImovel {
   id: string; tipo: string; finalidade: string; titulo: string;
   endereco: string | null; cidade: string | null; estado: string | null;
   preco: string; area: string | null; quartos: number | null; suites: number | null; banheiros: number | null; vagas: number | null;
-  amenidades: string[]; descricao: string | null; imagens: string[]; videoUrl: string | null;
+  amenidades: string[]; descricao: string | null; imagens: string[]; videoUrl: string | null; nomesCampanha?: string[];
   situacao: SituacaoImovel; previsaoEntrega: string | null; aceitaFinanciamento: boolean;
   valorCondominio: string | null; valorIptu: string | null; publicarNoSite?: boolean;
 }
@@ -51,7 +51,7 @@ export interface ImovelInput {
   tipo: string; finalidade: string; titulo: string;
   endereco?: string | null; cidade?: string | null; estado?: string | null;
   preco: number; area?: number | null; quartos?: number; suites?: number; banheiros?: number; vagas?: number;
-  amenidades?: string[]; descricao?: string | null; imagens?: string[]; videoUrl?: string | null;
+  amenidades?: string[]; descricao?: string | null; imagens?: string[]; videoUrl?: string | null; nomesCampanha?: string[];
   situacao?: SituacaoImovel; previsaoEntrega?: string | null; aceitaFinanciamento?: boolean;
   valorCondominio?: number | null; valorIptu?: number | null;
 }

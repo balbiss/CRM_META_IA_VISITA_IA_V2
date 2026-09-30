@@ -518,7 +518,9 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       // marcadores internos (_tentou_...) não vão como "o que já sabemos" do cliente
       dados: dadosCliente,
       faltando: faltandoAntes,
-      lead: { nome: lead.nome, canal: lead.canal, campanha: lead.campanha, imovel: lead.imovelTitulo, regiaoTelefone: regiaoPorDDD(lead.telefone) },
+      // Nome da campanha NÃO vai pra IA: é código interno ("[NC 02][CENARIUM][FORM]") e ela poderia
+      // repetir isso pro cliente. O que interessa (o imóvel) já foi resolvido na captação.
+      lead: { nome: lead.nome, canal: lead.canal, imovel: lead.imovelTitulo, regiaoTelefone: regiaoPorDDD(lead.telefone) },
       historico,
       openaiKey,
     };

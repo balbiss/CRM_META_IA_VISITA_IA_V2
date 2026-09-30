@@ -18,6 +18,19 @@ export function normalizarFinalidade(v?: string | null): 'venda' | 'locacao' | n
   return null;
 }
 
+const palavras = (s: string) => ' ' + s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+
+/** Imóvel cujo "nome na campanha" aparece no nome da campanha, como palavra inteira. */
+async function imovelPelaCampanha(imobId: string, campanha: string): Promise<string | null> {
+  const lista = await db.select({ id: imoveis.id, nomes: imoveis.nomesCampanha }).from(imoveis).where(eq(imoveis.imobiliariaId, imobId));
+  const alvo = palavras(campanha);
+  // o nome mais longo ganha ("VILA SERENA 2" antes de "VILA SERENA")
+  const achados = lista.flatMap(im => (im.nomes ?? []).map(n => ({ id: im.id, n: palavras(n) })))
+    .filter(x => x.n.trim() && alvo.includes(x.n))
+    .sort((a, b) => b.n.length - a.n.length);
+  return achados[0]?.id ?? null;
+}
+
 export async function criarLead(io: SocketServer, imobId: string, dados: {
   nome: string; telefone: string; email?: string; mensagem?: string;
   imovelTitulo?: string; imovelId?: string; campanha?: string; canal: string;
@@ -32,6 +45,10 @@ export async function criarLead(io: SocketServer, imobId: string, dados: {
   let imovelSub = dados.mensagem?.trim() || null;
   let valor: string | undefined;
   let finalidade = dados.finalidade ?? null;
+  // Sem imóvel explícito: tenta achar pelo nome da campanha (ex.: "CENARIUM" em "[NC 02][CENARIUM][FORM]").
+  if (!dados.imovelId && dados.campanha) {
+    dados = { ...dados, imovelId: await imovelPelaCampanha(imobId, dados.campanha) ?? undefined };
+  }
   if (dados.imovelId) {
     const [im] = await db.select().from(imoveis)
       .where(and(eq(imoveis.id, dados.imovelId), eq(imoveis.imobiliariaId, imobId))).limit(1);

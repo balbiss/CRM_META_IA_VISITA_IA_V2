@@ -542,6 +542,9 @@ export const imoveis = pgTable('imoveis', {
   videoUrl: text('video_url'),
   // Aparece no site público da imobiliária?
   publicarNoSite: boolean('publicar_no_site').notNull().default(true),
+  // Nomes com que o imóvel aparece no nome das campanhas de anúncio (ex.: "CENARIUM" em
+  // "[NC 02][CENARIUM][FORM]"): o lead que chega dessa campanha já vem ligado a este imóvel.
+  nomesCampanha: jsonb('nomes_campanha').$type<string[]>().notNull().default([]),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 });
 
