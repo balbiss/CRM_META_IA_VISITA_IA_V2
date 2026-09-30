@@ -93,6 +93,8 @@ export interface Lead {
   /** Agente de IA: 'atendendo' | 'transferido' | 'pausado' | '' (nunca passou pela IA). */
   iaStatus?: string;
   iaResumo?: string;
+  /** Número central (sessão WhatsApp) por onde o lead fala com a imobiliária. */
+  sessaoWhatsappId?: string | null;
 }
 
 export function buildLeads(): Lead[] {

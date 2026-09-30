@@ -15,13 +15,14 @@ export interface IntegracaoFacebook {
   ativo: boolean; ultimaSyncEm: string | null; ultimoErro: string | null; criadoEm: string; tokenFinal: string;
 }
 export interface IntegracaoFacebookInput { nomeConta: string; pageId: string; formId: string; accessToken: string }
-export interface SessaoWhatsapp { id: string; escopo: 'central' | 'corretor'; corretorId: string | null; status: 'desconectada' | 'conectando' | 'conectada'; numero: string | null; rotulo?: string | null }
+export interface SessaoWhatsapp { id: string; escopo: 'central' | 'corretor'; corretorId: string | null; status: 'desconectada' | 'conectando' | 'conectada'; numero: string | null; rotulo?: string | null; iaAtende?: boolean }
+export interface NumeroCentral { id: string; rotulo: string | null; numero: string | null }
 
 export type RoletaFinalidade = 'venda' | 'locacao' | 'ambos';
 export interface RoletaMembro { corretorId: string; nome: string; posicao: number; emPlantao: boolean; bloqueado: boolean }
 export interface RemoteRoleta {
   id: string; nome: string; ativa: boolean; ordem: number; padrao: boolean;
-  canais: string[]; finalidade: RoletaFinalidade; sessaoWhatsappId: string | null;
+  canais: string[]; finalidade: RoletaFinalidade; sessaoWhatsappId: string | null; numeroPrimeiroContatoId?: string | null;
   membros: RoletaMembro[];
 }
 export interface RemoteTemplate { id: string; titulo: string; texto: string; anexoUrl: string | null }
@@ -158,6 +159,8 @@ interface AppState {
   mudarSlugSite: (slug: string) => Promise<boolean>;
   toggleImovelNoSite: (id: string, publicar: boolean) => Promise<void>;
   sessoesWhatsapp: SessaoWhatsapp[];
+  /** Números centrais da imobiliária (id + rótulo) — visível até pro corretor, pra rotular as conversas. */
+  numerosCentrais: NumeroCentral[];
   wahaConfigurado: boolean;
 
   leads: Lead[];
@@ -233,6 +236,8 @@ interface AppState {
   fetchSessoesWhatsapp: () => Promise<void>;
   conectarWhatsapp: (escopo: 'central' | 'corretor', corretorId?: string, extra?: { rotulo?: string; id?: string }) => Promise<string | null>;
   renomearSessaoWhatsapp: (id: string, rotulo: string) => Promise<void>;
+  setIaAtendeSessao: (id: string, iaAtende: boolean) => Promise<void>;
+  fetchNumerosCentrais: () => Promise<void>;
   qrWhatsapp: (id: string) => Promise<{ status: string; numero: string | null; qr: string | null }>;
   desconectarWhatsapp: (id: string) => Promise<void>;
   setKbTag: (tagId: string | null) => void;
@@ -282,7 +287,7 @@ interface AppState {
   roletas: RemoteRoleta[];
   fetchRoletas: () => Promise<void>;
   criarRoleta: (nome: string) => Promise<void>;
-  atualizarRoleta: (id: string, patch: Partial<Pick<RemoteRoleta, 'nome' | 'ativa' | 'padrao' | 'canais' | 'finalidade' | 'sessaoWhatsappId'>>) => Promise<void>;
+  atualizarRoleta: (id: string, patch: Partial<Pick<RemoteRoleta, 'nome' | 'ativa' | 'padrao' | 'canais' | 'finalidade' | 'sessaoWhatsappId' | 'numeroPrimeiroContatoId'>>) => Promise<void>;
   excluirRoleta: (id: string) => Promise<void>;
   setMembrosRoleta: (id: string, corretorIds: string[]) => Promise<void>;
   rebatidasStatus: RebatidasStatus | null;
@@ -450,6 +455,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   siteWebhook: { url: null, token: null },
   site: null,
   sessoesWhatsapp: [],
+  numerosCentrais: [],
   wahaConfigurado: false,
 
   colunasRemotas: [],
@@ -1133,6 +1139,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({ sessoesWhatsapp: s.sessoesWhatsapp.map(x => (x.id === id ? { ...x, rotulo } : x)) }));
     try { await apiFetch('/api/whatsapp/sessoes/' + id, token, { method: 'PATCH', body: JSON.stringify({ rotulo }) }); }
     catch { get().fetchSessoesWhatsapp(); }
+  },
+  fetchNumerosCentrais: async () => {
+    const token = get().token;
+    if (!token) return;
+    try { set({ numerosCentrais: await apiFetch<NumeroCentral[]>('/api/whatsapp/numeros-centrais', token) }); } catch { /* sem WhatsApp ainda */ }
+  },
+  setIaAtendeSessao: async (id, iaAtende) => {
+    const token = get().token;
+    if (!token) return;
+    set(s => ({ sessoesWhatsapp: s.sessoesWhatsapp.map(x => (x.id === id ? { ...x, iaAtende } : x)) }));
+    try { await apiFetch('/api/whatsapp/sessoes/' + id, token, { method: 'PATCH', body: JSON.stringify({ iaAtende }) }); }
+    catch (e) { get().toast((e as ApiError).message || 'Não foi possível salvar'); get().fetchSessoesWhatsapp(); }
   },
   qrWhatsapp: async id => {
     const token = get().token;

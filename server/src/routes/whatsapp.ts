@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { sessoesWhatsapp, imobiliarias, perfis, leads, colunasKanban, mensagensWhatsapp, contatosPendentes, contatosIgnorados } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -172,7 +172,8 @@ export function whatsappRouter(io: SocketServer) {
         // modo corretor: já nasceu com o dono da sessão.
         if (!novo.corretorId) {
           const conf = sessao.escopo === 'central' ? await configIa(sessao.imobiliariaId) : null;
-          const comIa = conf?.cfg.atenderWhatsapp ? await iniciarIa(io, sessao.imobiliariaId, novo.id, 'whatsapp') : null;
+          // com várias caixas de entrada, a imobiliária escolhe em quais números a IA atende
+          const comIa = conf?.cfg.atenderWhatsapp && sessao.iaAtende ? await iniciarIa(io, sessao.imobiliariaId, novo.id, 'whatsapp') : null;
           if (comIa) lead = comIa;
           else void distribuirLead(io, sessao.imobiliariaId, novo.id).catch(e => console.error('roleta wa:', (e as Error).message));
         }
@@ -331,6 +332,15 @@ export function whatsappRouter(io: SocketServer) {
     }
     next();
   };
+  // Rótulo dos números centrais, liberado até pro corretor: a tela de Conversas mostra por qual
+  // número (caixa de entrada) cada lead fala. Só id/rótulo/número — nada de gestão.
+  router.get('/numeros-centrais', async (req, res) => {
+    res.json(await db.select({ id: sessoesWhatsapp.id, rotulo: sessoesWhatsapp.rotulo, numero: sessoesWhatsapp.numero })
+      .from(sessoesWhatsapp)
+      .where(and(eq(sessoesWhatsapp.imobiliariaId, req.auth!.imobiliariaId), eq(sessoesWhatsapp.escopo, 'central')))
+      .orderBy(asc(sessoesWhatsapp.criadoEm)));
+  });
+
   router.use(gestaoSessoes);
 
   async function refrescar(sessionName: string, id: string) {
@@ -412,14 +422,18 @@ export function whatsappRouter(io: SocketServer) {
 
   // Renomear o rótulo de uma sessão.
   router.patch('/sessoes/:id', async (req, res) => {
-    const parsed = z.object({ rotulo: z.string().max(40) }).safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Rótulo inválido' });
+    const parsed = z.object({ rotulo: z.string().max(40).optional(), iaAtende: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
     const [alvo] = await db.select().from(sessoesWhatsapp)
       .where(and(eq(sessoesWhatsapp.id, req.params.id), eq(sessoesWhatsapp.imobiliariaId, req.auth!.imobiliariaId))).limit(1);
     if (!alvo) return res.status(404).json({ error: 'Sessão não encontrada' });
     if (!donoDaSessao(req, alvo)) return res.status(403).json({ error: 'Sem acesso a essa sessão.' });
-    const [row] = await db.update(sessoesWhatsapp).set({ rotulo: parsed.data.rotulo })
-      .where(eq(sessoesWhatsapp.id, alvo.id)).returning();
+    const patch: { rotulo?: string; iaAtende?: boolean } = {};
+    if (parsed.data.rotulo !== undefined) patch.rotulo = parsed.data.rotulo;
+    // liga/desliga da IA por número: coisa de gestor, não do corretor dono do número
+    if (parsed.data.iaAtende !== undefined && req.auth!.role !== 'corretor') patch.iaAtende = parsed.data.iaAtende;
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nada pra alterar' });
+    const [row] = await db.update(sessoesWhatsapp).set(patch).where(eq(sessoesWhatsapp.id, alvo.id)).returning();
     res.json(row);
   });
 

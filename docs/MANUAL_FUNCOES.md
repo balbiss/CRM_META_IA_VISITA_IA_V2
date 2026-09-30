@@ -345,7 +345,63 @@ A Visita IA define no plano de cada imobiliária:
 
 ---
 
+## 7. Vários números (caixas de entrada)
+
+A imobiliária pode conectar mais de um WhatsApp central. Exemplo: um número de **Vendas** e outro
+de **Locação**.
+
+**Onde:** Integrações → Números da imobiliária → "+ Conectar outro número". Dê um nome (rótulo)
+para cada número, como "Vendas" ou "Locação". Esse nome aparece no resto do CRM.
+
+### Regra de ouro: a conversa continua no número em que começou
+
+Se o cliente chamou no número de Locação, tudo sai por esse número:
+- as respostas da equipe;
+- as respostas do Agente de IA;
+- o follow-up automático.
+
+O cliente nunca recebe mensagem de um número diferente do que ele conhece.
+
+### Ligar número a uma equipe (Roletas → Editar regras)
+
+- **"Só leads deste número de WhatsApp"**: quem chamar nesse número cai nessa roleta. Exemplo: o
+  número de Locação vai para a equipe de Locação.
+- **"Número do 1º contato (formulário/site)"**: aparece quando há mais de um número. Vale para os
+  leads de formulário (Facebook, Instagram, site), que ainda não falaram com nenhum número. Ele
+  define:
+  - por qual número o Agente de IA faz o primeiro contato;
+  - por qual número o corretor recebe o aviso do lead.
+  
+  Sem escolha, o CRM usa o primeiro número conectado.
+
+### Aviso ao corretor
+
+O aviso "Novo lead atribuído a você" sai pelo número por onde o lead chegou. Para lead de
+formulário, sai pelo número de 1º contato da roleta. Se esse número estiver desconectado, o CRM
+usa outro número conectado da imobiliária, para o aviso não se perder.
+
+### Em quais números a IA atende (Agente de IA → Onde a IA atua)
+
+Com mais de um número, aparece uma caixinha por número. Desmarque um número se ele não deve ter
+IA; por exemplo, o número do pós-venda. Quem chamar nesse número vai direto para a roleta, sem IA.
+A escolha salva na hora.
+
+Um número sem IA também não é usado pela IA no primeiro contato de formulário. Se nenhum número
+tiver IA, o lead de formulário vai direto para a roleta.
+
+### Conversas
+
+Com mais de um número:
+- cada conversa mostra uma etiqueta com o nome do número;
+- no topo há um filtro **"Todos os números"** para ver só as conversas de um deles;
+- dentro da conversa, o cabeçalho mostra "pelo número X".
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
+
+- **Agente de IA com personalidade diferente por número**: hoje a configuração da IA (prompt,
+  perguntas, etiquetas) é a mesma para todos os números da imobiliária.
 
 - **Números bloqueados no número central**: impedir que parentes/amigos do dono virem lead ao
   mandar mensagem no WhatsApp da imobiliária.

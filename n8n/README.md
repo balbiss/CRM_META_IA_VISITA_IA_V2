@@ -44,7 +44,9 @@ nunca pelo n8n. Se a IA errar uma regra, a correção vai pro código, não pro 
 - **n8n 1.x** (testado com webhook v2.1, HTTP Request v4.4/4.5, Code v2, If v2.3, Switch v3.4).
 - **Backend do CRM** publicado e acessível por HTTPS (ex.: `https://api-v2.visitaia.com.br`).
 - **WAHA** (WhatsApp HTTP API) com o número central da imobiliária conectado. Usado só pelo fluxo 03.
-  A sessão precisa se chamar `imob-<imobiliariaId>`; o CRM cria assim ao conectar pela tela de Integrações.
+  O CRM manda no payload o `sessionName` do número certo (a imobiliária pode ter vários números — ver
+  "Várias caixas de entrada" abaixo). Sem `sessionName` (versões antigas do CRM), o fluxo usa
+  `imob-<imobiliariaId>`, que é o nome do 1º número central que o CRM cria na tela de Integrações.
 - **Chave da OpenAI** (a do SaaS). Imobiliárias com "chave própria" mandam a delas a cada chamada.
 - **App da Meta** com acesso aos formulários (token por conexão, cadastrado na tela de Integrações). Só pro fluxo 04.
 
@@ -185,7 +187,18 @@ Resposta: `{ "ok": true, "texto": "...", "erro": null }`.
 ### 03 — Aviso ao corretor
 
 `POST <url>?secret=...` (sem esperar resposta), body:
-`{ imobiliariaId, leadId, corretorId, roletaId, corretorNome, corretorTelefone, lead: { nome, telefone, email, campanha, canal } }`.
+`{ imobiliariaId, leadId, corretorId, roletaId, sessionName, corretorNome, corretorTelefone, lead: { nome, telefone, email, campanha, canal } }`.
+
+`sessionName` = sessão WAHA pela qual o aviso sai. O CRM escolhe: o número por onde o lead chegou →
+senão o número da roleta ("Só leads deste número" ou "Número do 1º contato") → senão o 1º número
+central conectado.
+
+### Várias caixas de entrada
+
+A imobiliária pode conectar mais de um número central (ex.: Vendas e Locação). O 1º se chama
+`imob-<imobiliariaId>`, os outros `imob-<imobiliariaId>-<sufixo>`. O fluxo do agente de IA já
+recebe a `session` certa em cada chamada; o do aviso recebe `sessionName`. Nenhum fluxo precisa
+saber quantos números existem.
 O fluxo devolve o resultado em `POST __URL_API_CRM__/api/avisos-corretor/resultado?secret=...`
 com `{ imobiliariaId, leadId, leadNome, corretorId, corretorNome, sucesso, erro }`.
 

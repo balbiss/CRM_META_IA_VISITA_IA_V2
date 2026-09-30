@@ -7,6 +7,7 @@ import {
 } from '../db/schema.js';
 import { registrarEvento } from './eventos.js';
 import { checarNumero } from './waha.js';
+import { numeroCentralDoLead } from './numeros.js';
 
 type Fluxo = typeof followupFluxos.$inferSelect;
 
@@ -84,13 +85,10 @@ async function execucaoViva(leadId: string) {
 }
 
 /** Sessão do WhatsApp que vai despachar essa régua (central ou do corretor). */
-async function sessaoDespacho(imobiliariaId: string, corretorId: string | null) {
+async function sessaoDespacho(imobiliariaId: string, corretorId: string | null, sessaoDoLead: string | null) {
   const [imob] = await db.select({ modo: imobiliarias.modoWhatsapp }).from(imobiliarias).where(eq(imobiliarias.id, imobiliariaId)).limit(1);
-  if (imob?.modo === 'central') {
-    const [s] = await db.select().from(sessoesWhatsapp)
-      .where(and(eq(sessoesWhatsapp.imobiliariaId, imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
-    return s ?? null;
-  }
+  // com várias caixas de entrada: o mesmo número pelo qual o lead chegou (é por ele que a régua sai)
+  if (imob?.modo === 'central') return numeroCentralDoLead({ imobiliariaId, sessaoWhatsappId: sessaoDoLead });
   if (corretorId) {
     const [s] = await db.select().from(sessoesWhatsapp)
       .where(and(eq(sessoesWhatsapp.corretorId, corretorId), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
@@ -127,8 +125,8 @@ export async function iniciarFollowup(io: SocketServer, opts: IniciarOpts): Prom
 
   // Check de número antes da 1ª mensagem (só quando há sessão conectada pra checar).
   if (opts.automatico) {
-    const [lead] = await db.select({ telefone: leads.telefone, nome: leads.nome }).from(leads).where(eq(leads.id, opts.leadId)).limit(1);
-    const sessao = await sessaoDespacho(opts.imobiliariaId, opts.corretorId);
+    const [lead] = await db.select({ telefone: leads.telefone, nome: leads.nome, sessaoWhatsappId: leads.sessaoWhatsappId }).from(leads).where(eq(leads.id, opts.leadId)).limit(1);
+    const sessao = await sessaoDespacho(opts.imobiliariaId, opts.corretorId, lead?.sessaoWhatsappId ?? null);
     if (lead && sessao) {
       const existe = await checarNumero(sessao.sessionName, lead.telefone);
       if (existe === false) {

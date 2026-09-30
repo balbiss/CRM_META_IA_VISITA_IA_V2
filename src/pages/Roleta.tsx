@@ -109,7 +109,7 @@ function RoletaCard({ roleta, isManager, meNome, corretores, sessoes, nomeSessao
   corretores: { id: string; nome: string }[];
   sessoes: { id: string; rotulo?: string | null; numero: string | null; escopo: string }[];
   nomeSessao: (id: string | null) => string | null;
-  onPatch: (p: Partial<Pick<RemoteRoleta, 'nome' | 'ativa' | 'padrao' | 'canais' | 'finalidade' | 'sessaoWhatsappId'>>) => void;
+  onPatch: (p: Partial<Pick<RemoteRoleta, 'nome' | 'ativa' | 'padrao' | 'canais' | 'finalidade' | 'sessaoWhatsappId' | 'numeroPrimeiroContatoId'>>) => void;
   onDelete: () => void;
   onMembros: (ids: string[]) => void;
 }) {
@@ -183,6 +183,16 @@ function RoletaCard({ roleta, isManager, meNome, corretores, sessoes, nomeSessao
                   {sessoes.map(s => <option key={s.id} value={s.id}>{s.rotulo || s.numero || (s.escopo === 'central' ? 'Número central' : 'Corretor')}</option>)}
                 </select>
               </label>
+              {sessoes.filter(s => s.escopo === 'central').length > 1 && (
+                <label style={{ fontSize: 12 }}>
+                  <span style={{ display: 'block', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted)', marginBottom: 4, fontWeight: 700 }}>Número do 1º contato (formulário/site)</span>
+                  <select value={roleta.numeroPrimeiroContatoId ?? ''} onChange={e => onPatch({ numeroPrimeiroContatoId: e.target.value || null })} style={{ ...inp, width: '100%' }}>
+                    <option value="">O primeiro número conectado</option>
+                    {sessoes.filter(s => s.escopo === 'central').map(s => <option key={s.id} value={s.id}>{s.rotulo || s.numero || 'Número central'}</option>)}
+                  </select>
+                  <span style={{ display: 'block', fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>por qual número a IA chama o lead de formulário e o corretor recebe o aviso</span>
+                </label>
+              )}
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input type="checkbox" checked={roleta.padrao} onChange={e => onPatch({ padrao: e.target.checked })} /> roleta padrão (pega o que sobrar)

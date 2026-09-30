@@ -253,6 +253,13 @@
       "when": 1790737529553,
       "tag": "0035_third_mulholland_black",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790796500490,
+      "tag": "0036_majestic_triton",
+      "breakpoints": true
     }
   ]
 }

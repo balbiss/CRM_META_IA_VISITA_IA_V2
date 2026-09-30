@@ -73,7 +73,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=__URL_WAHA__/api/contacts/check-exists?phone={{ $json.corretorTelefone.replace(/\\D/g, \"\") }}&session=imob-{{ $('Receber Aviso de Lead').item.json.body.imobiliariaId }}",
+        "url": "=__URL_WAHA__/api/contacts/check-exists?phone={{ $json.corretorTelefone.replace(/\\D/g, \"\") }}&session={{ $('Receber Aviso de Lead').item.json.body.sessionName || ('imob-' + $('Receber Aviso de Lead').item.json.body.imobiliariaId) }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -106,7 +106,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"session\": \"imob-\" + $('Receber Aviso de Lead').item.json.body.imobiliariaId, \"chatId\": $json.chatId, \"text\": $('Preparar Mensagem').item.json.mensagem } }}",
+        "jsonBody": "={{ { \"session\": $('Receber Aviso de Lead').item.json.body.sessionName || (\"imob-\" + $('Receber Aviso de Lead').item.json.body.imobiliariaId), \"chatId\": $json.chatId, \"text\": $('Preparar Mensagem').item.json.mensagem } }}",
         "options": {
           "response": {
             "response": {

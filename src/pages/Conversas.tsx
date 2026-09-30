@@ -76,13 +76,24 @@ export default function Conversas() {
 
   const q = (convQuery || '').trim().toLowerCase();
   const [convTag, setConvTag] = useState<string | null>(null);
+  // Várias caixas de entrada: rótulo do número por onde o lead fala + filtro por número.
+  const numerosCentrais = useAppStore(s => s.numerosCentrais);
+  const fetchNumerosCentrais = useAppStore(s => s.fetchNumerosCentrais);
+  useEffect(() => { fetchNumerosCentrais(); }, [fetchNumerosCentrais]);
+  const variosNumeros = numerosCentrais.length > 1;
+  const nomeNumero = (id?: string | null) => {
+    const n = id ? numerosCentrais.find(x => x.id === id) : undefined;
+    return n ? (n.rotulo || (n.numero ? '+' + n.numero : 'Número')) : null;
+  };
+  const [convNumero, setConvNumero] = useState('');
   const convBase = useMemo(() => allLeads
     .filter(l => conversaPorLead.has(l.id))
     .filter(l => (isManager ? (convCorretor === 'Todos os corretores' || l.corretor === convCorretor) : l.corretor === meNome))
     .filter(l => !convTag || l.tags.includes(convTag))
+    .filter(l => !convNumero || l.sessaoWhatsappId === convNumero)
     .filter(l => !q || l.nome.toLowerCase().includes(q) || (q.replace(/\D/g, '') !== '' && l.tel.replace(/\D/g, '').includes(q.replace(/\D/g, ''))))
     .sort((a, b) => new Date(conversaPorLead.get(b.id)!.enviadoEm).getTime() - new Date(conversaPorLead.get(a.id)!.enviadoEm).getTime()),
-    [allLeads, conversaPorLead, isManager, convCorretor, meNome, q, convTag]);
+    [allLeads, conversaPorLead, isManager, convCorretor, meNome, q, convTag, convNumero]);
 
   const CL = convBase.find(l => l.id === convId);
   const convThread = mapMsgs(CL ? thread(CL) : []);
@@ -115,6 +126,12 @@ export default function Conversas() {
               <select value={convCorretor} onChange={e => setConvCorretor(e.target.value)} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, boxSizing: 'border-box' }}>
                 <option>Todos os corretores</option>
                 {perfis.map(p => <option key={p.id}>{p.nome}</option>)}
+              </select>
+            )}
+            {variosNumeros && (
+              <select value={convNumero} onChange={e => setConvNumero(e.target.value)} style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, boxSizing: 'border-box' }}>
+                <option value="">Todos os números</option>
+                {numerosCentrais.map(n => <option key={n.id} value={n.id}>{n.rotulo || (n.numero ? '+' + n.numero : 'Número')}</option>)}
               </select>
             )}
             {tags.length > 0 && (
@@ -162,6 +179,9 @@ export default function Conversas() {
                       {l.iaStatus === 'atendendo' && (
                         <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '1px 5px', borderRadius: 4, color: '#fff', background: '#0F5E57' }}>IA</span>
                       )}
+                      {variosNumeros && nomeNumero(l.sessaoWhatsappId) && (
+                        <span title="Número por onde o lead fala" style={{ flex: 'none', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 4, color: 'var(--ink)', border: '1px solid var(--line)' }}>{nomeNumero(l.sessaoWhatsappId)}</span>
+                      )}
                       <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4, color: l.canal === 'WhatsApp' ? 'var(--olive)' : (l.canal === 'Instagram' || l.canal === 'Facebook') ? 'var(--terra)' : 'var(--muted)', background: l.canal === 'WhatsApp' ? 'var(--oliveSoft)' : (l.canal === 'Instagram' || l.canal === 'Facebook') ? 'var(--terraSoft)' : 'var(--line)' }}>{l.canal}</span>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: (resumo?.naoLidas ?? 0) > 0 ? 'var(--ink)' : 'var(--muted)', fontWeight: (resumo?.naoLidas ?? 0) > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(resumo?.direcao === 'out' ? 'Você: ' : '') + legendaAnexo}</span>
                       {(resumo?.naoLidas ?? 0) > 0 && (
@@ -190,7 +210,7 @@ export default function Conversas() {
                   <ChatAvatar nome={CL.nome} foto={CL.foto} size={38} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{CL.nome}</span>
-                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{CL.imovel} · {CL.corretor}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{CL.imovel} · {CL.corretor}{variosNumeros && nomeNumero(CL.sessaoWhatsappId) ? ' · pelo número ' + nomeNumero(CL.sessaoWhatsappId) : ''}</span>
                     {CL.tags.length > 0 && <TagChips tags={tags.filter(t => CL.tags.includes(t.id))} style={{ marginTop: 4 }} />}
                   </span>
                 </button>

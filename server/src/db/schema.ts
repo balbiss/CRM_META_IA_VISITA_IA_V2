@@ -236,6 +236,9 @@ export const roletas = pgTable('roletas', {
   finalidade: roletaFinalidadeEnum('finalidade').notNull().default('ambos'),
   // Se setado, essa roleta só pega leads que entraram por ESSE número de WhatsApp.
   sessaoWhatsappId: uuid('sessao_whatsapp_id').references(() => sessoesWhatsapp.id, { onDelete: 'set null' }),
+  // Número central pelo qual o Agente de IA faz o PRIMEIRO CONTATO com leads de formulário
+  // (Facebook/Instagram/Site) que caem nesta roleta. Sem ele: o 1º número conectado em que a IA atende.
+  numeroPrimeiroContatoId: uuid('numero_primeiro_contato_id').references(() => sessoesWhatsapp.id, { onDelete: 'set null' }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   imobIdx: index('roletas_imobiliaria_id_idx').on(table.imobiliariaId),
@@ -267,6 +270,8 @@ export const sessoesWhatsapp = pgTable('sessoes_whatsapp', {
   numero: text('numero'),
   // Rótulo do número ("Vendas", "Locação", "Campanha Facebook") — só pra sessão central.
   rotulo: text('rotulo'),
+  // O Agente de IA atende neste número? (só vale pra número central; desligado = lead vai direto pra roleta)
+  iaAtende: boolean('ia_atende').notNull().default(true),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   imobiliariaIdx: index('sessoes_whatsapp_imobiliaria_id_idx').on(table.imobiliariaId),

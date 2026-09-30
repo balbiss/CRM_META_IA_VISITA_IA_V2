@@ -3,6 +3,7 @@ import { db } from '../db/client.js';
 import { filasAtendimento, roletas, perfis, leads, colunasKanban, distribuicaoLog, notificacoes, imobiliarias } from '../db/schema.js';
 import { enviarPush } from './push.js';
 import { registrarEvento } from './eventos.js';
+import { numeroCentralDoLead } from './numeros.js';
 import { dispararGatilhoLeadNovo } from './followup.js';
 import type { Server as SocketServer } from 'socket.io';
 
@@ -23,7 +24,8 @@ async function notificarCorretorPorWhatsapp(
   leadId: string,
   corretorId: string,
   roletaId: string,
-  lead: { nome: string; telefone: string; email: string | null; campanha: string | null; canal: string },
+  lead: { nome: string; telefone: string; email: string | null; campanha: string | null; canal: string; sessaoWhatsappId: string | null },
+  numeroDaRoleta: string | null,
 ) {
   try {
     const [imob] = await db.select({ ligado: imobiliarias.notificarCorretorWhatsapp })
@@ -42,11 +44,19 @@ async function notificarCorretorPorWhatsapp(
       return;
     }
 
+    // Com várias caixas de entrada: avisa pelo número por onde o lead chegou (ou o da roleta), e
+    // não mais sempre pelo 1º número conectado — que podia até estar desconectado.
+    const numero = await numeroCentralDoLead({ imobiliariaId, sessaoWhatsappId: lead.sessaoWhatsappId }, { preferidoId: numeroDaRoleta });
+    if (!numero) {
+      registrarEvento(imobiliariaId, leadId, 'aviso', 'Nenhum número central conectado — não deu pra avisar o corretor por WhatsApp.', 'Sistema');
+      return;
+    }
+
     const r = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        imobiliariaId, leadId, corretorId, roletaId,
+        imobiliariaId, leadId, corretorId, roletaId, sessionName: numero.sessionName,
         corretorNome: corretor.nome, corretorTelefone: corretor.telefone,
         lead: { nome: lead.nome, telefone: lead.telefone, email: lead.email, campanha: lead.campanha, canal: lead.canal },
       }),
@@ -68,7 +78,7 @@ export async function garantirRoletaPadrao(imobiliariaId: string): Promise<strin
 
 /** Escolhe a roleta que deve receber o lead, pelas regras de entrada (número > canal > finalidade).
  *  Cai na roleta padrão se nenhuma regra específica casar. */
-async function escolherRoleta(
+export async function escolherRoleta(
   imobiliariaId: string,
   lead: { canal: string; finalidade: string | null; sessaoWhatsappId: string | null },
 ): Promise<Roleta | null> {
@@ -157,7 +167,8 @@ export async function distribuirLead(io: SocketServer, imobiliariaId: string, le
   void dispararGatilhoLeadNovo(io, imobiliariaId, leadId, escolhido.corretorId);
   void notificarCorretorPorWhatsapp(imobiliariaId, leadId, escolhido.corretorId, roleta.id, {
     nome: lead.nome, telefone: lead.telefone, email: lead.email, campanha: lead.campanha, canal: lead.canal,
-  });
+    sessaoWhatsappId: lead.sessaoWhatsappId,
+  }, roleta.sessaoWhatsappId ?? roleta.numeroPrimeiroContatoId ?? null);
   return escolhido.corretorId;
 }
 

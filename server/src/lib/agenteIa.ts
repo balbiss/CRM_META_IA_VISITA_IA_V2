@@ -7,7 +7,8 @@ import {
 } from '../db/schema.js';
 import { isBusinessHoursOpen } from './schedule.js';
 import { registrarEvento } from './eventos.js';
-import { distribuirLead } from './roleta.js';
+import { distribuirLead, escolherRoleta } from './roleta.js';
+import { numeroCentralDoLead } from './numeros.js';
 import { enviarImagemResolvida, enviarTextoResolvido, presenca, resolverChatId } from './waha.js';
 import { imoveisParaIa, type ImovelSugerido } from './catalogoIa.js';
 import { decifrar } from './crypto.js';
@@ -100,8 +101,18 @@ export async function iniciarIa(io: SocketServer, imobiliariaId: string, leadId:
   if (!conf) return null;
   const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
   if (!lead || lead.corretorId) return null;
+  // Lead de formulário ainda não falou com nenhum número: escolhe por qual a IA vai chamar — o
+  // definido na roleta em que ele vai cair, senão o 1º conectado em que a IA atende. Nenhum = roleta direto.
+  let sessaoPrimeiroContato: string | null = null;
+  if (origem === 'formulario') {
+    const roleta = await escolherRoleta(imobiliariaId, { canal: lead.canal, finalidade: lead.finalidade, sessaoWhatsappId: null });
+    const num = await numeroCentralDoLead({ imobiliariaId, sessaoWhatsappId: null }, { preferidoId: roleta?.numeroPrimeiroContatoId, soComIa: true });
+    if (!num) return null;
+    sessaoPrimeiroContato = num.id;
+  }
   const perguntas = perguntasDe(conf.cfg);
   const [row] = await db.update(leads).set({
+    ...(sessaoPrimeiroContato ? { sessaoWhatsappId: sessaoPrimeiroContato } : {}),
     iaStatus: 'atendendo',
     iaDados: await dadosDoImovelDeInteresse(lead, perguntas, dadosIniciais(lead, perguntas)),
     iaUltimaAtividadeEm: new Date(),
@@ -298,16 +309,7 @@ async function aplicarEtiquetas(io: SocketServer, lead: Lead, tagIds: string[]) 
   io.to('imobiliaria:' + lead.imobiliariaId).emit('lead:tags', { leadId: lead.id, tagIds: atuais.map(a => a.tagId) });
 }
 
-async function sessaoCentral(lead: Lead) {
-  if (lead.sessaoWhatsappId) {
-    const [s] = await db.select().from(sessoesWhatsapp)
-      .where(and(eq(sessoesWhatsapp.id, lead.sessaoWhatsappId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
-    if (s) return s;
-  }
-  const [s] = await db.select().from(sessoesWhatsapp)
-    .where(and(eq(sessoesWhatsapp.imobiliariaId, lead.imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
-  return s ?? null;
-}
+const sessaoCentral = (lead: Lead) => numeroCentralDoLead(lead);
 
 export async function temCentralConectada(imobiliariaId: string) {
   const [s] = await db.select({ id: sessoesWhatsapp.id }).from(sessoesWhatsapp)

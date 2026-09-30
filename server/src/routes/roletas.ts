@@ -57,6 +57,7 @@ export function roletasRouter(io: SocketServer) {
     canais: z.array(z.enum(CANAIS)).optional(),
     finalidade: z.enum(['venda', 'locacao', 'ambos']).optional(),
     sessaoWhatsappId: z.string().uuid().nullable().optional(),
+    numeroPrimeiroContatoId: z.string().uuid().nullable().optional(),
   });
 
   router.patch('/:id', async (req, res) => {
@@ -67,9 +68,10 @@ export function roletasRouter(io: SocketServer) {
       .where(and(eq(roletas.id, req.params.id), eq(roletas.imobiliariaId, imobiliariaId))).limit(1);
     if (!alvo) return res.status(404).json({ error: 'Roleta não encontrada' });
 
-    if (parsed.data.sessaoWhatsappId) {
+    for (const numId of [parsed.data.sessaoWhatsappId, parsed.data.numeroPrimeiroContatoId]) {
+      if (!numId) continue;
       const [s] = await db.select({ id: sessoesWhatsapp.id }).from(sessoesWhatsapp)
-        .where(and(eq(sessoesWhatsapp.id, parsed.data.sessaoWhatsappId), eq(sessoesWhatsapp.imobiliariaId, imobiliariaId))).limit(1);
+        .where(and(eq(sessoesWhatsapp.id, numId), eq(sessoesWhatsapp.imobiliariaId, imobiliariaId))).limit(1);
       if (!s) return res.status(400).json({ error: 'Número de WhatsApp inválido' });
     }
     // só uma roleta padrão por imobiliária

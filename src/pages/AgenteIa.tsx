@@ -121,6 +121,10 @@ export default function AgenteIa() {
   const token = useAppStore(s => s.token);
   const toast = useAppStore(s => s.toast);
   const tagsImob = useAppStore(s => s.tags);
+  const centrais = useAppStore(s => s.sessoesWhatsapp).filter(x => x.escopo === 'central');
+  const setIaAtendeSessao = useAppStore(s => s.setIaAtendeSessao);
+  const fetchSessoesWhatsapp = useAppStore(s => s.fetchSessoesWhatsapp);
+  useEffect(() => { fetchSessoesWhatsapp(); }, [fetchSessoesWhatsapp]);
   const [aba, setAba] = useState<'config' | 'atendimentos'>('config');
   const [dados, setDados] = useState<Resposta | null>(null);
   const [cfg, setCfg] = useState<Config | null>(null);
@@ -250,6 +254,18 @@ export default function AgenteIa() {
               <input type="checkbox" checked={cfg.atenderWhatsapp} onChange={e => set('atenderWhatsapp', e.target.checked)} />
               Atender quem manda mensagem pela primeira vez no WhatsApp da imobiliária
             </label>
+            {centrais.length > 1 && (
+              <div style={{ margin: '0 0 12px 24px', display: 'grid', gap: 5, opacity: cfg.atenderWhatsapp ? 1 : 0.5 }}>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>Em quais números a IA atende:</p>
+                {centrais.map(n => (
+                  <label key={n.id} style={{ display: 'flex', gap: 8, fontSize: 13 }}>
+                    <input type="checkbox" disabled={!cfg.atenderWhatsapp} checked={n.iaAtende !== false} onChange={e => setIaAtendeSessao(n.id, e.target.checked)} />
+                    {n.rotulo || 'Número'}{n.numero ? ' · +' + n.numero : ''}{n.status !== 'conectada' ? ' (desconectado)' : ''}
+                  </label>
+                ))}
+                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>Desmarcado = quem chama nesse número vai direto pra roleta, sem IA. Essa escolha salva na hora.</p>
+              </div>
+            )}
             <p style={{ fontSize: 13, margin: '0 0 6px' }}>Fazer o primeiro contato com leads de formulário:</p>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 6 }}>
               {['Facebook', 'Instagram', 'Site'].map(c => (
