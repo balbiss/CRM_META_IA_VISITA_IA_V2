@@ -42,6 +42,9 @@ const configSchema = z.object({
   esperaSegundos: z.number().int().min(3).max(120).default(8),
   mensagemDesqualificado: z.string().min(1).max(500).optional(),
   despedidaModo: z.enum(['ia', 'fixa']).default('ia'),
+  consultarImoveis: z.boolean().default(true),
+  informarPreco: z.boolean().default(true),
+  fotosPorImovel: z.number().int().min(1).max(8).default(3),
   simularDigitacao: z.boolean().default(true),
   modelo: z.enum(['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini']),
   // undefined = mantém a chave atual; '' = remove; texto = troca.

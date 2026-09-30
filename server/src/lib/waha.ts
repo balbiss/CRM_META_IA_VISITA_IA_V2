@@ -192,7 +192,17 @@ export async function enviarTextoResolvido(sessionName: string, numero: string, 
   return { id };
 }
 
-export type MensagemHistorico ={ id: string; timestamp: number; fromMe: boolean; body?: string | null; hasMedia?: boolean };
+/** Envia uma foto (URL pública) com legenda, no chatId já resolvido. Devolve o id da mensagem. */
+export async function enviarImagemResolvida(sessionName: string, chatIdAlvo: string, url: string, legenda: string): Promise<{ id: string | null }> {
+  const r = await waha<{ id?: string | { _serialized?: string }; key?: { id?: string } }>('/api/sendImage', {
+    method: 'POST',
+    body: { session: sessionName, chatId: chatIdAlvo, caption: legenda, file: { url, mimetype: 'image/jpeg', filename: 'imovel.jpg' } },
+  });
+  const id = typeof r?.id === 'string' ? r.id : r?.id?._serialized || r?.key?.id || null;
+  return { id };
+}
+
+export type MensagemHistorico = { id: string; timestamp: number; fromMe: boolean; body?: string | null; hasMedia?: boolean };
 
 /** Últimas mensagens de uma conversa, direto do WhatsApp (mais nova primeiro). Usa o chatId
  *  resolvido pelo check-exists (pode ser @lid), que é o que o WhatsApp de fato reconhece. */

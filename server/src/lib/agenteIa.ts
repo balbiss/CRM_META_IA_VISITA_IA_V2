@@ -8,7 +8,8 @@ import {
 import { isBusinessHoursOpen } from './schedule.js';
 import { registrarEvento } from './eventos.js';
 import { distribuirLead } from './roleta.js';
-import { enviarTextoResolvido, presenca, resolverChatId } from './waha.js';
+import { enviarImagemResolvida, enviarTextoResolvido, presenca, resolverChatId } from './waha.js';
+import { imoveisParaIa, type ImovelSugerido } from './catalogoIa.js';
 import { decifrar } from './crypto.js';
 
 /* Agente de IA (SDR).
@@ -292,6 +293,37 @@ export async function temCentralConectada(imobiliariaId: string) {
   return !!s;
 }
 
+/** Ficha do imóvel que fecha o envio das fotos (formatação do WhatsApp: *negrito*). */
+function fichaImovel(im: ImovelSugerido) {
+  const aluguel = /alug/i.test(im.finalidade);
+  const linhas = [
+    '🏠 *' + im.titulo + '*',
+    im.local ? '📍 ' + im.local : '',
+    im.preco ? '💰 R$ ' + im.preco.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + (aluguel ? '/mês' : '') : '💰 Valores: o corretor te passa',
+    [im.quartos ? '🛏 ' + im.quartos + ' quarto' + (im.quartos > 1 ? 's' : '') + (im.suites ? ' (' + im.suites + ' suíte' + (im.suites > 1 ? 's' : '') + ')' : '') : '',
+      im.vagas ? '🚗 ' + im.vagas + ' vaga' + (im.vagas > 1 ? 's' : '') : '', im.area ? '📐 ' + im.area + ' m²' : ''].filter(Boolean).join(' · '),
+    im.destaques.length ? '✨ ' + im.destaques.join(', ') : '',
+    '✅ ' + im.situacao + (im.aceitaFinanciamento && !aluguel ? ' · aceita financiamento' : ''),
+  ];
+  return linhas.filter(Boolean).join('\n');
+}
+
+/** Foto de imóvel mandada pela IA. A legenda é obrigatória: é por ela que o eco do WhatsApp é
+ *  reconhecido (sem isso a foto voltaria como "humano respondendo" e pausaria a IA). */
+async function enviarFotoPelaIa(io: SocketServer, lead: Lead, url: string, legenda: string, chatIdPronto?: string) {
+  const sessao = await sessaoCentral(lead);
+  if (!sessao) throw new Error('nenhum número central conectado');
+  const alvoChat = chatIdPronto || (await resolverChatId(sessao.sessionName, lead.telefone)).chatId;
+  const lista = ecos.get(lead.id) || [];
+  lista.push({ texto: legenda, ate: Date.now() + 120000 });
+  ecos.set(lead.id, lista);
+  const { id } = await enviarImagemResolvida(sessao.sessionName, alvoChat, url, legenda);
+  const [row] = await db.insert(mensagensWhatsapp).values({
+    leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, ackStatus: 2, texto: legenda, anexoUrl: url, anexoTipo: 'imagem',
+  }).onConflictDoNothing().returning();
+  if (row) io.to('imobiliaria:' + lead.imobiliariaId).emit('mensagem:created', row);
+}
+
 async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string, chatIdPronto?: string) {
   const sessao = await sessaoCentral(lead);
   if (!sessao) throw new Error('nenhum número central conectado');
@@ -366,6 +398,7 @@ export function regiaoPorDDD(telefone: string): string | null {
 type RespostaN8n = {
   ok?: boolean; resposta?: string; campos?: Record<string, unknown>; encerrar?: boolean; pediuHumano?: boolean; semInteresse?: boolean;
   etiquetas?: string[]; desqualificacao?: string | null; tentativaResgate?: string | null; textoDesqualificacao?: string | null;
+  enviarFotos?: string | null; imovelInteresse?: string | null;
   tokens?: number; erro?: string;
 };
 
@@ -442,6 +475,10 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const etiquetasPermitidas = (cfg.etiquetas || []).filter(e => nomesTags.has(e.tagId))
       .map(e => ({ id: e.tagId, nome: nomesTags.get(e.tagId)!, quando: e.quando }));
     const criterios = cfg.criterios || [];
+    const dadosCliente = Object.fromEntries(Object.entries(dadosAtuais).filter(([k]) => !k.startsWith(TENTOU)));
+    const sugeridos = cfg.consultarImoveis
+      ? await imoveisParaIa(lead.imobiliariaId, { ...dadosCliente, _texto: entrada || '' }, lead.imovelInteresseId, cfg.informarPreco)
+      : [];
     const payload = {
       evento,
       imobiliariaId: lead.imobiliariaId,
@@ -451,7 +488,10 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
         nome: cfg.nomeAgente, tom: cfg.tom, apresentacao: cfg.apresentacao, instrucoesExtras: cfg.instrucoesExtras,
         mensagemPassagem: cfg.mensagemPassagem, modelo: cfg.modelo,
         despedidaExplica: cfg.despedidaModo !== 'fixa',
+        consultaImoveis: cfg.consultarImoveis, informarPreco: cfg.informarPreco,
       },
+      // imagens ficam no CRM: a IA só decide "mandar fotos do IM2", quem envia é o CRM
+      imoveis: sugeridos.map(({ imagens, id: _id, ...resto }) => ({ ...resto, qtdFotos: imagens.length })),
       perguntas,
       etiquetas: etiquetasPermitidas,
       criterios: criterios.map(c => ({
@@ -459,7 +499,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
         tentativa: c.tentativa || null, tentativaFeita: dadosAtuais[TENTOU + c.chave] === 'sim',
       })),
       // marcadores internos (_tentou_...) não vão como "o que já sabemos" do cliente
-      dados: Object.fromEntries(Object.entries(dadosAtuais).filter(([k]) => !k.startsWith(TENTOU))),
+      dados: dadosCliente,
       faltando: faltandoAntes,
       lead: { nome: lead.nome, canal: lead.canal, campanha: lead.campanha, imovel: lead.imovelTitulo, regiaoTelefone: regiaoPorDDD(lead.telefone) },
       historico,
@@ -550,6 +590,37 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       if (erroEnvio === 'NUMERO_INEXISTENTE') decisao = 'passar:numero_invalido';
     }
     if (alvo && !baloes.length) await presenca(alvo.sessao, alvo.chatId, 'parar');
+
+    // Catálogo: a IA escolheu um dos imóveis que o CRM passou (código IM1..IM3); o CRM manda as fotos
+    // e anota o imóvel de interesse no lead pro corretor.
+    // Trava: a IA às vezes OFERECE as fotos ("quer ver?") e já marca pra enviar. Foto só sai se o
+    // cliente pediu, ou disse que sim depois de a IA ter oferecido.
+    const ultimaDaIa = [...historico].reverse().find(m => m.papel === 'atendente')?.texto || '';
+    const clientePediuFoto = /foto|imagem|image|v[eê]r|mostr|manda|envi/i.test(entrada || '')
+      || (/foto/i.test(ultimaDaIa) && /\b(sim|quero|pode|claro|manda|bora|opa|ok|beleza|gostei|show)\b/i.test(entrada || ''));
+    const imFotos = r.enviarFotos && clientePediuFoto ? sugeridos.find(s => s.codigo === r.enviarFotos) : undefined;
+    const imInteresse = imFotos ?? (r.imovelInteresse ? sugeridos.find(s => s.codigo === r.imovelInteresse) : undefined);
+    let fotosEnviadas = 0;
+    if (imFotos && !erroEnvio && !decisao.startsWith('descartar')) {
+      // Ordem fixa: (texto da IA já saiu) → fotos numeradas → ficha do imóvel fechando o envio.
+      const fotos = imFotos.imagens.slice(0, Math.max(1, cfg.fotosPorImovel));
+      for (let i = 0; i < fotos.length; i++) {
+        await dormir(i === 0 ? 1200 : 900);
+        try { await enviarFotoPelaIa(io, lead, fotos[i], '📷 ' + (i + 1) + '/' + fotos.length, alvo?.chatId); fotosEnviadas++; } catch (e) {
+          console.error('agente IA foto:', (e as Error).message);
+        }
+      }
+      if (fotosEnviadas) {
+        await dormir(1500);
+        await enviarPelaIa(io, lead, fichaImovel(imFotos), alvo?.chatId).catch(e => console.error('agente IA ficha:', (e as Error).message));
+      }
+    }
+    if (imInteresse && lead.imovelInteresseId !== imInteresse.id) {
+      const [atualizado] = await db.update(leads).set({ imovelInteresseId: imInteresse.id, imovelTitulo: imInteresse.titulo, imovelSub: imInteresse.local || null })
+        .where(eq(leads.id, leadId)).returning();
+      if (atualizado) io.to('imobiliaria:' + atualizado.imobiliariaId).emit('lead:updated', atualizado);
+    }
+
     if (decisao === 'passar:limite' && cfg.mensagemPassagem && !erroEnvio) {
       await enviarPelaIa(io, lead, cfg.mensagemPassagem, alvo?.chatId).catch(() => {});
     }
@@ -564,6 +635,8 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const camposLog = { ...novos };
     if (tagsAplicar.length) camposLog['etiquetas'] = tagsAplicar.map(id => nomesTags.get(id) || '?').join(', ');
     if (crit) camposLog['desqualificação'] = crit.descricao;
+    if (fotosEnviadas) camposLog['fotos enviadas'] = fotosEnviadas + ' de ' + imFotos!.titulo;
+    else if (imInteresse) camposLog['imóvel de interesse'] = imInteresse.titulo;
     await registrarTurno(lead, { entrada, resposta: resposta || null, campos: camposLog, decisao, erro: erroEnvio, tokens: r.tokens || 0, chaveSaas: !openaiKey });
 
     const [atual] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);

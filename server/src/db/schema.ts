@@ -385,6 +385,10 @@ export const agentesIa = pgTable('agentes_ia', {
   // Jeito humano: segundos de silêncio do cliente antes de responder (junta mensagens picadas),
   // e marcar como lido + "digitando…" proporcional ao tamanho da resposta.
   esperaSegundos: integer('espera_segundos').notNull().default(8),
+  // Catálogo: a IA sugere imóveis do cadastro que combinam e manda as fotos quando o cliente quer ver.
+  consultarImoveis: boolean('consultar_imoveis').notNull().default(true),
+  informarPreco: boolean('informar_preco').notNull().default(true),
+  fotosPorImovel: integer('fotos_por_imovel').notNull().default(3),
   // Despedida de quem foi desqualificado: 'ia' = a IA explica com educação que no momento não se
   // encaixa; 'fixa' = manda mensagemDesqualificado, sem citar motivo nenhum.
   despedidaModo: text('despedida_modo').notNull().default('ia'),

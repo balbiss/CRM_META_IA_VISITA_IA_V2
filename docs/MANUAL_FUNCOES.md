@@ -233,6 +233,23 @@ lead sem corretor**. Cliente antigo que volta a falar vai direto pro corretor de
     "digitando…" por um tempo proporcional ao tamanho da resposta, e às vezes a resposta vem em dois
     balões, como uma pessoa faria.
 
+### Catálogo de imóveis e fotos
+
+Com **"Sugerir imóveis do cadastro"** ligado (quadro "Catálogo de imóveis"):
+- A cada resposta, o sistema procura no menu **Imóveis** os que combinam com o que o cliente
+  procura: compra ou aluguel, tipo, bairro, faixa de valor (com 15% de folga) e quartos. A IA
+  recebe **até 3** e só fala desses, **nunca inventa imóvel**.
+- Assim que entende o que o cliente quer, a IA sugere 1 (no máximo 2) imóvel com os destaques e
+  **sempre pergunta se ele quer ver as fotos**. As fotos **só são enviadas depois que o cliente
+  pede ou aceita**.
+- O envio sai sempre nesta ordem: uma frase curta ("Te mando as fotos aqui 👇") → **as fotos**
+  numeradas (📷 1/3, 2/3...) → uma **ficha do imóvel** (endereço, valor, quartos, vagas, área,
+  destaques, situação).
+- O imóvel de que o cliente gostou fica **anotado no lead** (Imóvel de interesse), pro corretor.
+- **"A IA pode informar o preço"**: desmarcado, ela diz que os valores o corretor passa.
+- **"Fotos por imóvel"**: quantas fotos mandar (padrão 3). Só vão imóveis com foto no cadastro.
+- Se o cliente veio de anúncio de um imóvel específico, esse imóvel entra sempre primeiro.
+
 ### Áudio e região
 
 - **Áudio:** se o cliente manda áudio enquanto a IA atende, ela **entende o áudio** e responde ao
@@ -302,4 +319,4 @@ A Visita IA define no plano de cada imobiliária:
 - **Números bloqueados no número central**: impedir que parentes/amigos do dono virem lead ao
   mandar mensagem no WhatsApp da imobiliária.
 - **Agente de IA, próximas etapas**: resumo da qualificação dentro do aviso de WhatsApp ao
-  corretor; a IA consultar o catálogo de imóveis e agendar visita.
+  corretor; agendar visita.

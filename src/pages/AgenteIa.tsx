@@ -11,6 +11,7 @@ type Config = {
   perguntas: Pergunta[]; etiquetas: EtiquetaIa[]; criterios: CriterioIa[]; mensagemPassagem: string; maxMensagens: number; atenderWhatsapp: boolean;
   primeiroContatoCanais: string[]; minutosSemResposta: number; minutosAbandono: number;
   esperaSegundos: number; simularDigitacao: boolean; mensagemDesqualificado: string; despedidaModo: 'ia' | 'fixa';
+  consultarImoveis: boolean; informarPreco: boolean; fotosPorImovel: number;
   modelo: 'gpt-4.1-mini' | 'gpt-4.1' | 'gpt-4o-mini';
 };
 type Resposta = { liberada: boolean; usaChaveSaas: boolean; chaveFinal: string | null; config: Config | null; perguntasPadrao: Pergunta[] };
@@ -21,6 +22,7 @@ const PADRAO = (perguntas: Pergunta[]): Config => ({
   mensagemPassagem: 'Perfeito! Vou passar suas informações para um dos nossos corretores.',
   maxMensagens: 12, atenderWhatsapp: true, primeiroContatoCanais: [], minutosSemResposta: 20, minutosAbandono: 120,
   esperaSegundos: 8, simularDigitacao: true, modelo: 'gpt-4.1-mini', despedidaModo: 'ia',
+  consultarImoveis: true, informarPreco: true, fotosPorImovel: 3,
   mensagemDesqualificado: 'Obrigada pelas informações! Registrei tudo aqui e, se surgir uma opção que combine com o que você procura, nossa equipe entra em contato. 😊',
 });
 
@@ -134,6 +136,8 @@ export default function AgenteIa() {
       esperaSegundos: r.config.esperaSegundos ?? 8, simularDigitacao: r.config.simularDigitacao ?? true,
       mensagemDesqualificado: r.config.mensagemDesqualificado ?? PADRAO([]).mensagemDesqualificado,
       despedidaModo: r.config.despedidaModo ?? 'ia',
+      consultarImoveis: r.config.consultarImoveis ?? true, informarPreco: r.config.informarPreco ?? true,
+      fotosPorImovel: r.config.fotosPorImovel ?? 3,
     } : PADRAO(r.perguntasPadrao));
     setChave(undefined);
   }).catch(e => toast((e as Error).message));
@@ -256,6 +260,28 @@ export default function AgenteIa() {
             <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
               Canal desmarcado = o lead vai direto pra roleta, como hoje. A IA só atua no número central (nunca no WhatsApp pessoal
               de corretor) e só em lead sem corretor.
+            </p>
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Catálogo de imóveis</p>
+            <label style={{ display: 'flex', gap: 8, fontSize: 13, marginBottom: 8 }}>
+              <input type="checkbox" checked={cfg.consultarImoveis} onChange={e => set('consultarImoveis', e.target.checked)} />
+              Sugerir imóveis do cadastro que combinam com o que o cliente procura, e mandar as fotos quando ele quiser ver
+            </label>
+            <div style={{ opacity: cfg.consultarImoveis ? 1 : 0.5 }}>
+              <label style={{ display: 'flex', gap: 8, fontSize: 13, marginBottom: 8 }}>
+                <input type="checkbox" disabled={!cfg.consultarImoveis} checked={cfg.informarPreco} onChange={e => set('informarPreco', e.target.checked)} />
+                A IA pode informar o preço (desmarcado: "os valores o corretor te passa")
+              </label>
+              <label style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'center' }}>
+                Fotos por imóvel:
+                <input type="number" min={1} max={8} disabled={!cfg.consultarImoveis} style={{ ...inp, width: 70 }} value={cfg.fotosPorImovel}
+                  onChange={e => set('fotosPorImovel', Number(e.target.value))} />
+              </label>
+            </div>
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              A IA só fala de imóvel que está no cadastro (menu Imóveis), nunca inventa. O imóvel que o cliente gostar fica anotado no lead pro corretor.
             </p>
           </div>
 

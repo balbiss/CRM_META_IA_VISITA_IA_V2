@@ -239,6 +239,13 @@
       "when": 1790733764463,
       "tag": "0033_plain_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790734960595,
+      "tag": "0034_lying_violations",
+      "breakpoints": true
     }
   ]
 }
