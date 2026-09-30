@@ -112,6 +112,25 @@ export function agenteIaRouter(io: SocketServer) {
     res.json({ ok: true });
   });
 
+  // Confere na OpenAI se a chave própria salva (ou uma colada agora, antes de salvar) funciona.
+  router.post('/testar-chave', async (req, res) => {
+    const { imobiliariaId } = req.auth!;
+    let chave = typeof req.body?.chave === 'string' ? req.body.chave.trim() : '';
+    if (!chave) {
+      const [cfg] = await db.select().from(agentesIa).where(eq(agentesIa.imobiliariaId, imobiliariaId)).limit(1);
+      if (!cfg?.chaveCifrada || !cfg.chaveIv || !cfg.chaveTag) return res.status(400).json({ error: 'Nenhuma chave salva ainda.' });
+      chave = decifrar({ cifrado: cfg.chaveCifrada, iv: cfg.chaveIv, tag: cfg.chaveTag });
+    }
+    try {
+      const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: 'Bearer ' + chave } });
+      if (r.ok) return res.json({ ok: true, mensagem: 'Chave válida — a OpenAI aceitou.' });
+      const j = await r.json().catch(() => ({})) as { error?: { message?: string } };
+      res.json({ ok: false, mensagem: r.status === 401 ? 'A OpenAI recusou essa chave (inválida ou revogada).' : 'OpenAI respondeu ' + r.status + ': ' + (j.error?.message || '') });
+    } catch (e) {
+      res.json({ ok: false, mensagem: 'Não consegui falar com a OpenAI: ' + (e as Error).message });
+    }
+  });
+
   router.get('/turnos', async (req, res) => {
     const rows = await db.select().from(iaTurnos)
       .where(eq(iaTurnos.imobiliariaId, req.auth!.imobiliariaId))

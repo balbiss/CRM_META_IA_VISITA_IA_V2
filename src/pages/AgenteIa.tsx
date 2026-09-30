@@ -47,6 +47,8 @@ export default function AgenteIa() {
   const [chave, setChave] = useState<string | undefined>(undefined);
   const [salvando, setSalvando] = useState(false);
   const [turnos, setTurnos] = useState<Turno[] | null>(null);
+  const [testandoChave, setTestandoChave] = useState(false);
+  const [resultadoChave, setResultadoChave] = useState<{ ok: boolean; mensagem: string } | null>(null);
 
   const carregar = () => apiFetch<Resposta>('/api/agente-ia', token).then(r => {
     setDados(r);
@@ -97,6 +99,21 @@ export default function AgenteIa() {
     set('perguntas', arr);
   };
   const toggleCanal = (c: string) => set('primeiroContatoCanais', cfg.primeiroContatoCanais.includes(c) ? cfg.primeiroContatoCanais.filter(x => x !== c) : [...cfg.primeiroContatoCanais, c]);
+
+  const testarChave = async () => {
+    setTestandoChave(true);
+    setResultadoChave(null);
+    try {
+      const r = await apiFetch<{ ok: boolean; mensagem: string }>('/api/agente-ia/testar-chave', token, {
+        method: 'POST', body: JSON.stringify(chave ? { chave } : {}),
+      });
+      setResultadoChave(r);
+    } catch (e) {
+      setResultadoChave({ ok: false, mensagem: (e as Error).message });
+    } finally {
+      setTestandoChave(false);
+    }
+  };
 
   const salvar = async () => {
     setSalvando(true);
@@ -317,8 +334,23 @@ export default function AgenteIa() {
                   O seu plano usa a sua própria chave da OpenAI (o custo das conversas fica na sua conta OpenAI).
                   {dados.chaveFinal ? ' Chave atual: ' + dados.chaveFinal : ' Nenhuma chave cadastrada.'}
                 </p>
-                <input style={inp} type="password" placeholder={dados.chaveFinal ? 'Cole uma nova chave pra trocar' : 'sk-...'}
-                  value={chave ?? ''} onChange={e => setChave(e.target.value)} autoComplete="off" />
+                {/* type="text" mascarado (e não "password"): o gerenciador de senhas do navegador preenchia esse
+                    campo com a senha de login do CRM, e salvar de novo gravava a senha no lugar da chave. */}
+                <input style={{ ...inp, WebkitTextSecurity: 'disc' } as React.CSSProperties} type="text" name="chave-openai-agente"
+                  placeholder={dados.chaveFinal ? 'Cole uma nova chave só se quiser trocar' : 'sk-...'}
+                  value={chave ?? ''} onChange={e => setChave(e.target.value)}
+                  autoComplete="off" autoCorrect="off" spellCheck={false} data-lpignore="true" data-1p-ignore="true" />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={testarChave} disabled={testandoChave}
+                    style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', fontSize: 12.5, fontWeight: 600 }}>
+                    {testandoChave ? 'Testando…' : chave ? 'Testar a chave colada' : 'Testar a chave salva'}
+                  </button>
+                  {resultadoChave && (
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: resultadoChave.ok ? 'var(--olive)' : 'var(--terra)' }}>
+                      {resultadoChave.ok ? '✓ ' : '✗ '}{resultadoChave.mensagem}
+                    </span>
+                  )}
+                </div>
               </>
             )}
             <label style={{ ...lbl, marginTop: 14 }}>Modelo</label>
