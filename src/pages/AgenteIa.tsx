@@ -14,7 +14,7 @@ type Config = {
   modelo: 'gpt-4.1-mini' | 'gpt-4.1' | 'gpt-4o-mini';
 };
 type Resposta = { liberada: boolean; usaChaveSaas: boolean; chaveFinal: string | null; config: Config | null; perguntasPadrao: Pergunta[] };
-type Turno = { id: string; leadNome: string; entrada: string | null; resposta: string | null; campos: Record<string, string>; decisao: string; erro: string | null; criadoEm: string };
+type Turno = { id: string; leadId: string | null; leadNome: string; entrada: string | null; resposta: string | null; campos: Record<string, string>; decisao: string; erro: string | null; criadoEm: string };
 
 const PADRAO = (perguntas: Pergunta[]): Config => ({
   ativo: false, nomeAgente: 'Ana', tom: 'cordial', apresentacao: '', instrucoesExtras: '', perguntas, etiquetas: [], criterios: [],
@@ -37,8 +37,82 @@ const legendaDecisao = (d: string) => DECISOES[d] || (d.startsWith('descartar:')
 
 const inp: React.CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, boxSizing: 'border-box' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted)', margin: '0 0 6px', fontWeight: 700 };
-const card: React.CSSProperties = { border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', padding: 18, marginBottom: 16 };
+// breakInside: o quadro não se parte entre as duas colunas da configuração.
+const card: React.CSSProperties = { border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', padding: 18, marginBottom: 16, breakInside: 'avoid' };
 const dataBr = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+const corDecisao = (d: string) => (d.startsWith('passar') ? 'var(--olive)' : d.startsWith('descartar') ? 'var(--terra)' : 'var(--muted)');
+
+/** Atendimentos da IA: leads à esquerda; a conversa do lead escolhido à direita, em balões. */
+function Atendimentos({ turnos }: { turnos: Turno[] | null }) {
+  const [sel, setSel] = useState<string | null>(null);
+  if (turnos === null) return <p style={{ fontSize: 13, color: 'var(--muted)' }}>Carregando…</p>;
+  if (!turnos.length) return <div style={card}><p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>Nenhum atendimento da IA ainda.</p></div>;
+
+  // turnos vêm do mais novo pro mais antigo
+  const porLead = new Map<string, Turno[]>();
+  for (const t of turnos) {
+    const k = t.leadId || t.leadNome;
+    porLead.set(k, [...(porLead.get(k) || []), t]);
+  }
+  const grupos = [...porLead.entries()].map(([k, lista]) => ({ k, lista, ultimo: lista[0] }));
+  const atual = grupos.find(g => g.k === sel) ?? grupos[0];
+
+  return (
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{ ...card, flex: '0 1 320px', minWidth: 260, padding: 0, overflow: 'hidden', maxHeight: '72vh', overflowY: 'auto' }}>
+        {grupos.map(g => {
+          const on = g.k === atual.k;
+          return (
+            <button key={g.k} onClick={() => setSel(g.k)} style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--line)',
+              background: on ? 'var(--bg)' : 'transparent', boxShadow: 'inset 3px 0 0 ' + (on ? 'var(--terra)' : 'transparent'),
+            }}>
+              <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700 }}>{g.ultimo.leadNome}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{dataBr(g.ultimo.criadoEm)}</span>
+              </span>
+              <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: corDecisao(g.ultimo.decisao), marginTop: 3 }}>{legendaDecisao(g.ultimo.decisao)}</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{g.lista.length} {g.lista.length === 1 ? 'resposta da IA' : 'respostas da IA'}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ ...card, flex: '1 1 480px', minWidth: 0, maxHeight: '72vh', overflowY: 'auto' }}>
+        <p style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700 }}>{atual.ultimo.leadNome}</p>
+        {[...atual.lista].reverse().map(t => (
+          <div key={t.id} style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px dashed var(--line)' }}>
+            {t.entrada && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 6 }}>
+                <span style={{ maxWidth: '78%', padding: '9px 12px', borderRadius: 12, background: 'var(--bg)', border: '1px solid var(--line)', fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.entrada}</span>
+              </div>
+            )}
+            {t.resposta && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+                <span style={{ maxWidth: '78%', padding: '9px 12px', borderRadius: 12, background: '#0F5E57', color: '#fff', fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.resposta}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline', fontSize: 11.5 }}>
+              <span style={{ color: 'var(--muted)' }}>{dataBr(t.criadoEm)}</span>
+              <span style={{ fontWeight: 700, color: corDecisao(t.decisao) }}>{legendaDecisao(t.decisao)}</span>
+            </div>
+            {Object.keys(t.campos || {}).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                {Object.entries(t.campos).map(([k, v]) => (
+                  <span key={k} style={{ fontSize: 11.5, padding: '2px 8px', borderRadius: 20, background: 'var(--oliveSoft)', color: '#0F5E57' }}>
+                    <b>{k.replace(/_/g, ' ')}:</b> {v}
+                  </span>
+                ))}
+              </div>
+            )}
+            {t.erro && <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--terra)' }}><b>Erro:</b> {t.erro}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function AgenteIa() {
   const token = useAppStore(s => s.token);
@@ -137,7 +211,7 @@ export default function AgenteIa() {
   };
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <div style={{ maxWidth: 1320 }}>
       {cabecalho}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {([['config', 'Configuração'], ['atendimentos', 'Atendimentos da IA']] as const).map(([v, t]) => (
@@ -150,29 +224,10 @@ export default function AgenteIa() {
       </div>
 
       {aba === 'atendimentos' ? (
-        <div style={{ border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', overflow: 'hidden' }}>
-          {turnos === null && <p style={{ padding: 20, fontSize: 13, color: 'var(--muted)' }}>Carregando…</p>}
-          {turnos?.length === 0 && <p style={{ padding: 20, fontSize: 13, color: 'var(--muted)' }}>Nenhum atendimento da IA ainda.</p>}
-          {turnos?.map(t => (
-            <div key={t.id} style={{ padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{dataBr(t.criadoEm)}</span>
-                <span style={{ fontWeight: 700 }}>{t.leadNome}</span>
-                <span style={{ fontSize: 12, color: t.decisao.startsWith('passar') ? 'var(--olive)' : t.decisao.startsWith('descartar') ? 'var(--terra)' : 'var(--muted)', fontWeight: 600 }}>{legendaDecisao(t.decisao)}</span>
-              </div>
-              {t.entrada && <p style={{ margin: '6px 0 0', color: 'var(--muted)' }}><b>Cliente:</b> {t.entrada}</p>}
-              {t.resposta && <p style={{ margin: '4px 0 0' }}><b>IA:</b> {t.resposta}</p>}
-              {Object.keys(t.campos || {}).length > 0 && (
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#0F5E57' }}>
-                  <b>Entendeu:</b> {Object.entries(t.campos).map(([k, v]) => k + ': ' + v).join(' · ')}
-                </p>
-              )}
-              {t.erro && <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--terra)' }}><b>Erro:</b> {t.erro}</p>}
-            </div>
-          ))}
-        </div>
+        <Atendimentos turnos={turnos} />
       ) : (
         <>
+        <div style={{ columnWidth: 440, columnGap: 16 }}>
           <div style={card}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 700 }}>
               <input type="checkbox" checked={cfg.ativo} onChange={e => set('ativo', e.target.checked)} />
@@ -398,9 +453,16 @@ export default function AgenteIa() {
             </select>
           </div>
 
-          <button onClick={salvar} disabled={salvando} style={{ padding: '11px 22px', border: 'none', borderRadius: 8, background: 'var(--terra)', color: '#fff', fontSize: 13.5, fontWeight: 600, opacity: salvando ? 0.6 : 1 }}>
-            {salvando ? 'Salvando…' : 'Salvar'}
-          </button>
+        </div>
+          <div style={{
+            position: 'sticky', bottom: 0, zIndex: 5, display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'center',
+            padding: '12px 0', background: 'var(--bg)', borderTop: '1px solid var(--line)',
+          }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>As mudanças só valem depois de salvar.</span>
+            <button onClick={salvar} disabled={salvando} style={{ padding: '11px 26px', border: 'none', borderRadius: 8, background: 'var(--terra)', color: '#fff', fontSize: 13.5, fontWeight: 600, opacity: salvando ? 0.6 : 1 }}>
+              {salvando ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
         </>
       )}
     </div>
