@@ -153,10 +153,26 @@ export async function resolverChatId(sessionName: string, numero: string): Promi
   return { chatId: chk?.chatId || chatId(fone), existe: typeof chk?.numberExists === 'boolean' ? chk.numberExists : null };
 }
 
-/** Presença no chat: marcar como lido ("visto" azul), começar/parar o "digitando…". Best-effort. */
-export async function presenca(sessionName: string, chatIdAlvo: string, acao: 'visto' | 'digitando' | 'parar') {
-  const rota = acao === 'visto' ? '/api/sendSeen' : acao === 'digitando' ? '/api/startTyping' : '/api/stopTyping';
-  await waha(rota, { method: 'POST', body: { session: sessionName, chatId: chatIdAlvo } }).catch(() => {});
+/** Presença no chat — best-effort, com prazo curto pra nunca segurar a resposta:
+ *  'visto' = visto azul; 'digitando' = fica ONLINE e mostra "digitando…" (o WhatsApp não mostra
+ *  "digitando" de quem está offline, e a sessão fica offline por padrão); 'parar' = tira o
+ *  "digitando"; 'offline' = volta a ficar offline (senão o celular do número para de receber push). */
+export async function presenca(sessionName: string, chatIdAlvo: string, acao: 'visto' | 'digitando' | 'parar' | 'offline') {
+  const chamar = async (rota: string, body: unknown) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      await fetch(base() + rota, {
+        method: 'POST', signal: ctrl.signal,
+        headers: { 'X-Api-Key': key(), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+    } catch { /* presença é enfeite: se falhar, a mensagem sai do mesmo jeito */ } finally { clearTimeout(t); }
+  };
+  if (acao === 'visto') return chamar('/api/sendSeen', { session: sessionName, chatId: chatIdAlvo });
+  if (acao === 'offline') return chamar(`/api/${sessionName}/presence`, { presence: 'offline' });
+  if (acao === 'parar') return chamar(`/api/${sessionName}/presence`, { chatId: chatIdAlvo, presence: 'paused' });
+  await chamar(`/api/${sessionName}/presence`, { presence: 'online' });
+  await chamar(`/api/${sessionName}/presence`, { chatId: chatIdAlvo, presence: 'typing' });
 }
 
 /** Envia texto usando o chatId que o próprio WhatsApp resolve (check-exists, pode ser @lid) —

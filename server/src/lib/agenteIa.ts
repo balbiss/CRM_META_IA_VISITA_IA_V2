@@ -107,6 +107,9 @@ export async function mensagemDoCliente(io: SocketServer, leadId: string) {
   agendar(io, leadId, (cfg?.s ?? DEBOUNCE_MS / 1000) * 1000);
 }
 
+/** Marcador em iaDados de que a tentativa de resgate de um critério já foi feita. */
+const TENTOU = '_tentou_';
+
 const dormir = (ms: number) => new Promise(res => setTimeout(res, ms));
 // ~18 caracteres por segundo, entre 1,8 s e 9 s — parece gente digitando, sem deixar o cliente esperando demais.
 const tempoDigitacao = (texto: string) => Math.min(9000, Math.max(1800, texto.length * 55));
@@ -239,7 +242,7 @@ async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string, chatIdP
 
 type RespostaN8n = {
   ok?: boolean; resposta?: string; campos?: Record<string, unknown>; encerrar?: boolean; pediuHumano?: boolean; semInteresse?: boolean;
-  etiquetas?: string[]; desqualificacao?: string | null; tokens?: number; erro?: string;
+  etiquetas?: string[]; desqualificacao?: string | null; tentativaResgate?: string | null; tokens?: number; erro?: string;
 };
 
 async function chamarN8n(payload: unknown): Promise<RespostaN8n> {
@@ -322,11 +325,16 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       agente: {
         nome: cfg.nomeAgente, tom: cfg.tom, apresentacao: cfg.apresentacao, instrucoesExtras: cfg.instrucoesExtras,
         mensagemPassagem: cfg.mensagemPassagem, modelo: cfg.modelo,
+        despedidaExplica: cfg.despedidaModo !== 'fixa',
       },
       perguntas,
       etiquetas: etiquetasPermitidas,
-      criterios: criterios.map(c => ({ chave: c.chave, descricao: c.descricao })),
-      dados: dadosAtuais,
+      criterios: criterios.map(c => ({
+        chave: c.chave, descricao: c.descricao,
+        tentativa: c.tentativa || null, tentativaFeita: dadosAtuais[TENTOU + c.chave] === 'sim',
+      })),
+      // marcadores internos (_tentou_...) não vão como "o que já sabemos" do cliente
+      dados: Object.fromEntries(Object.entries(dadosAtuais).filter(([k]) => !k.startsWith(TENTOU))),
       faltando: faltandoAntes,
       lead: { nome: lead.nome, canal: lead.canal, campanha: lead.campanha, imovel: lead.imovelTitulo },
       historico,
@@ -359,7 +367,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       try {
         r = await chamarN8n(payload);
       } catch (e2) {
-        if (alvo) await presenca(alvo.sessao, alvo.chatId, 'parar');
+        if (alvo) { await presenca(alvo.sessao, alvo.chatId, 'parar'); await presenca(alvo.sessao, alvo.chatId, 'offline'); }
         await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'passar:erro', erro: (e2 as Error).message, chaveSaas: !openaiKey });
         await passarParaRoleta(io, leadId, 'erro');
         return;
@@ -373,6 +381,8 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       if (typeof v === 'string' && v.trim()) novos[p.chave] = v.trim().slice(0, 200);
     }
     const dados = { ...dadosAtuais, ...novos };
+    const critTentado = r.tentativaResgate ? criterios.find(c => c.chave === r.tentativaResgate && c.tentativa) : undefined;
+    if (critTentado) dados[TENTOU + critTentado.chave] = 'sim';
     const turnos = lead.iaTurnos + 1;
     const faltando = perguntas.filter(p => p.obrigatoria && !dados[p.chave]);
 
@@ -390,7 +400,9 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     else if (faltando.length === 0 && r.encerrar) decisao = 'passar:completo';
     else if (turnos >= cfg.maxMensagens) decisao = 'passar:limite';
 
-    const resposta = (r.resposta || '').trim();
+    // Desqualificado no modo "texto fixo": vai a mensagem cadastrada, não a da IA.
+    const despedidaFixa = decisao.startsWith('descartar:') && cfg.despedidaModo === 'fixa';
+    const resposta = despedidaFixa ? cfg.mensagemDesqualificado.trim() : (r.resposta || '').trim();
     let erroEnvio: string | null = null;
     const baloes = resposta ? baloesDe(resposta) : [];
     try {
@@ -411,8 +423,9 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     }
     if (alvo && !baloes.length) await presenca(alvo.sessao, alvo.chatId, 'parar');
     if (decisao === 'passar:limite' && cfg.mensagemPassagem && !erroEnvio) {
-      await enviarPelaIa(io, lead, cfg.mensagemPassagem).catch(() => {});
+      await enviarPelaIa(io, lead, cfg.mensagemPassagem, alvo?.chatId).catch(() => {});
     }
+    if (alvo) await presenca(alvo.sessao, alvo.chatId, 'offline');
 
     await db.update(leads).set({
       iaDados: dados, iaTurnos: turnos, iaUltimaAtividadeEm: new Date(),

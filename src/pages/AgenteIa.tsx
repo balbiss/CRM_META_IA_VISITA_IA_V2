@@ -5,12 +5,12 @@ import { apiFetch } from '../lib/api';
 
 type Pergunta = { chave?: string; rotulo: string; pergunta: string; obrigatoria: boolean; opcoes?: string[] };
 type EtiquetaIa = { tagId: string; quando: string };
-type CriterioIa = { chave?: string; descricao: string; acao: 'descartar' | 'seguir'; tagId?: string | null };
+type CriterioIa = { chave?: string; descricao: string; acao: 'descartar' | 'seguir'; tagId?: string | null; tentativa?: string | null };
 type Config = {
   ativo: boolean; nomeAgente: string; tom: 'cordial' | 'formal' | 'descontraido'; apresentacao: string; instrucoesExtras: string;
   perguntas: Pergunta[]; etiquetas: EtiquetaIa[]; criterios: CriterioIa[]; mensagemPassagem: string; maxMensagens: number; atenderWhatsapp: boolean;
   primeiroContatoCanais: string[]; minutosSemResposta: number; minutosAbandono: number;
-  esperaSegundos: number; simularDigitacao: boolean;
+  esperaSegundos: number; simularDigitacao: boolean; mensagemDesqualificado: string; despedidaModo: 'ia' | 'fixa';
   modelo: 'gpt-4.1-mini' | 'gpt-4.1' | 'gpt-4o-mini';
 };
 type Resposta = { liberada: boolean; usaChaveSaas: boolean; chaveFinal: string | null; config: Config | null; perguntasPadrao: Pergunta[] };
@@ -20,7 +20,8 @@ const PADRAO = (perguntas: Pergunta[]): Config => ({
   ativo: false, nomeAgente: 'Ana', tom: 'cordial', apresentacao: '', instrucoesExtras: '', perguntas, etiquetas: [], criterios: [],
   mensagemPassagem: 'Perfeito! Já passei suas informações para um dos nossos corretores, que vai falar com você em instantes.',
   maxMensagens: 12, atenderWhatsapp: true, primeiroContatoCanais: [], minutosSemResposta: 20, minutosAbandono: 120,
-  esperaSegundos: 15, simularDigitacao: true, modelo: 'gpt-4.1-mini',
+  esperaSegundos: 8, simularDigitacao: true, modelo: 'gpt-4.1-mini', despedidaModo: 'ia',
+  mensagemDesqualificado: 'Obrigada pelas informações! Registrei tudo aqui e, se surgir uma opção que combine com o que você procura, nossa equipe entra em contato. 😊',
 });
 
 const DECISOES: Record<string, string> = {
@@ -56,7 +57,9 @@ export default function AgenteIa() {
     setDados(r);
     setCfg(r.config ? {
       ...r.config, etiquetas: r.config.etiquetas ?? [], criterios: r.config.criterios ?? [],
-      esperaSegundos: r.config.esperaSegundos ?? 15, simularDigitacao: r.config.simularDigitacao ?? true,
+      esperaSegundos: r.config.esperaSegundos ?? 8, simularDigitacao: r.config.simularDigitacao ?? true,
+      mensagemDesqualificado: r.config.mensagemDesqualificado ?? PADRAO([]).mensagemDesqualificado,
+      despedidaModo: r.config.despedidaModo ?? 'ia',
     } : PADRAO(r.perguntasPadrao));
     setChave(undefined);
   }).catch(e => toast((e as Error).message));
@@ -302,6 +305,9 @@ export default function AgenteIa() {
               <div key={i} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
                 <input style={{ ...inp, marginBottom: 8 }} value={c.descricao} placeholder="Ex.: Renda familiar abaixo de R$ 2.500"
                   onChange={ev => set('criterios', cfg.criterios.map((x, j) => (j === i ? { ...x, descricao: ev.target.value } : x)))} />
+                <input style={{ ...inp, marginBottom: 8 }} value={c.tentativa ?? ''}
+                  placeholder="Antes de descartar, tentar (opcional). Ex.: perguntar se consegue compor renda com outra pessoa ou usar FGTS"
+                  onChange={ev => set('criterios', cfg.criterios.map((x, j) => (j === i ? { ...x, tentativa: ev.target.value } : x)))} />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <select style={{ ...inp, width: 190, flex: 'none' }} value={c.acao} onChange={ev => set('criterios', cfg.criterios.map((x, j) => (j === i ? { ...x, acao: ev.target.value as CriterioIa['acao'] } : x)))}>
                     <option value="descartar">Descartar (vai pro bolsão)</option>
@@ -319,6 +325,18 @@ export default function AgenteIa() {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', fontSize: 12.5, fontWeight: 600 }}>
               <Plus size={14} /> Adicionar critério
             </button>
+            <p style={{ ...lbl, marginTop: 16 }}>O que responder pra quem for descartado</p>
+            <label style={{ display: 'flex', gap: 8, fontSize: 13, marginBottom: 6 }}>
+              <input type="radio" checked={cfg.despedidaModo === 'ia'} onChange={() => set('despedidaModo', 'ia')} />
+              A IA explica com educação que, no momento, não temos uma opção que se encaixe
+            </label>
+            <label style={{ display: 'flex', gap: 8, fontSize: 13, marginBottom: 8 }}>
+              <input type="radio" checked={cfg.despedidaModo === 'fixa'} onChange={() => set('despedidaModo', 'fixa')} />
+              Mandar sempre este texto (sem citar motivo):
+            </label>
+            {cfg.despedidaModo === 'fixa' && (
+              <textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} value={cfg.mensagemDesqualificado} onChange={e => set('mensagemDesqualificado', e.target.value)} />
+            )}
           </div>
 
           <div style={card}>

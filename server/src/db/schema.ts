@@ -355,7 +355,11 @@ export type PerguntaIa = { chave: string; rotulo: string; pergunta: string; obri
 export type EtiquetaIa = { tagId: string; quando: string };
 /** Critério de desqualificação: 'descartar' = vai pro bolsão sem passar pela roleta;
  *  'seguir' = só aplica a etiqueta (se tiver) e segue o fluxo normal. */
-export type CriterioIa = { chave: string; descricao: string; acao: 'descartar' | 'seguir'; tagId?: string | null };
+export type CriterioIa = {
+  chave: string; descricao: string; acao: 'descartar' | 'seguir'; tagId?: string | null;
+  // "Antes de descartar, tentar": a IA faz essa tentativa de salvar o lead UMA vez (ex.: compor renda).
+  tentativa?: string | null;
+};
 
 /** Configuração do Agente de IA (SDR) de cada imobiliária. Campos em vez de prompt livre:
  *  quem monta o prompt é o workflow n8n, a partir daqui. */
@@ -378,7 +382,11 @@ export const agentesIa = pgTable('agentes_ia', {
   minutosAbandono: integer('minutos_abandono').notNull().default(120),
   // Jeito humano: segundos de silêncio do cliente antes de responder (junta mensagens picadas),
   // e marcar como lido + "digitando…" proporcional ao tamanho da resposta.
-  esperaSegundos: integer('espera_segundos').notNull().default(15),
+  esperaSegundos: integer('espera_segundos').notNull().default(8),
+  // Despedida de quem foi desqualificado: 'ia' = a IA explica com educação que no momento não se
+  // encaixa; 'fixa' = manda mensagemDesqualificado, sem citar motivo nenhum.
+  despedidaModo: text('despedida_modo').notNull().default('ia'),
+  mensagemDesqualificado: text('mensagem_desqualificado').notNull().default('Obrigada pelas informações! Registrei tudo aqui e, se surgir uma opção que combine com o que você procura, nossa equipe entra em contato. 😊'),
   simularDigitacao: boolean('simular_digitacao').notNull().default(true),
   // Chave OpenAI própria da imobiliária (AES-256-GCM, mesmo esquema do token do Facebook).
   chaveCifrada: text('chave_cifrada'),

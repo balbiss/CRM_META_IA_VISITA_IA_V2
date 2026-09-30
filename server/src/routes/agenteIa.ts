@@ -31,6 +31,7 @@ const configSchema = z.object({
     descricao: z.string().min(1).max(300),
     acao: z.enum(['descartar', 'seguir']),
     tagId: z.string().uuid().nullable().optional(),
+    tentativa: z.string().max(300).nullable().optional(),
   })).max(15).default([]),
   mensagemPassagem: z.string().min(1).max(500),
   maxMensagens: z.number().int().min(3).max(40),
@@ -38,7 +39,9 @@ const configSchema = z.object({
   primeiroContatoCanais: z.array(z.enum(['Facebook', 'Instagram', 'Site'])),
   minutosSemResposta: z.number().int().min(5).max(1440),
   minutosAbandono: z.number().int().min(15).max(2880),
-  esperaSegundos: z.number().int().min(3).max(120).default(15),
+  esperaSegundos: z.number().int().min(3).max(120).default(8),
+  mensagemDesqualificado: z.string().min(1).max(500).optional(),
+  despedidaModo: z.enum(['ia', 'fixa']).default('ia'),
   simularDigitacao: z.boolean().default(true),
   modelo: z.enum(['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini']),
   // undefined = mantém a chave atual; '' = remove; texto = troca.
@@ -87,7 +90,10 @@ export function agenteIaRouter(io: SocketServer) {
       let chave = slug(c.chave || c.descricao) || 'criterio';
       while (chavesCrit.has(chave)) chave += '_2';
       chavesCrit.add(chave);
-      return { chave, descricao: c.descricao.trim(), acao: c.acao, tagId: c.tagId && tagsDaImob.has(c.tagId) ? c.tagId : null };
+      return {
+        chave, descricao: c.descricao.trim(), acao: c.acao, tagId: c.tagId && tagsDaImob.has(c.tagId) ? c.tagId : null,
+        tentativa: c.tentativa?.trim() || null,
+      };
     });
 
     const vistas = new Set<string>();
