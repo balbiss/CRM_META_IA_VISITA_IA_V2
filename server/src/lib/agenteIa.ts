@@ -2,7 +2,7 @@ import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
 import {
-  agentesIa, colunasKanban, iaTurnos, imobiliarias, leads, leadTags, mensagensWhatsapp, perfis, sessoesWhatsapp, tags,
+  agentesIa, colunasKanban, iaTurnos, imobiliarias, imoveis, leads, leadTags, mensagensWhatsapp, perfis, sessoesWhatsapp, tags,
   HORARIO_ATENDIMENTO_PADRAO, type CriterioIa, type DiaAtendimento, type PerguntaIa,
 } from '../db/schema.js';
 import { isBusinessHoursOpen } from './schedule.js';
@@ -73,15 +73,37 @@ function dadosIniciais(lead: Lead, perguntas: PerguntaIa[]): Record<string, stri
   return dados;
 }
 
+/** Lead que chegou de um imóvel específico (site ou campanha): o anúncio já responde compra/aluguel,
+ *  tipo, bairro e valor — a IA começa sabendo isso em vez de perguntar de novo. */
+async function dadosDoImovelDeInteresse(lead: Lead, perguntas: PerguntaIa[], dados: Record<string, string>) {
+  if (!lead.imovelInteresseId) return dados;
+  const [im] = await db.select().from(imoveis).where(eq(imoveis.id, lead.imovelInteresseId)).limit(1);
+  if (!im) return dados;
+  const tem = (chave: string) => perguntas.some(p => p.chave === chave) && !dados[chave];
+  const novo = { ...dados };
+  const aluguel = /alug|loca/i.test(im.finalidade);
+  if (tem('finalidade')) novo.finalidade = aluguel ? 'Alugar' : 'Comprar';
+  if (tem('tipo_imovel')) novo.tipo_imovel = im.tipo;
+  // "Tv. Padre Eutíquio, Batista Campos" → "Batista Campos"
+  const bairro = (im.endereco || '').split(',').pop()?.trim();
+  if (tem('regiao') && (bairro || im.cidade)) novo.regiao = [bairro, im.cidade].filter(Boolean).join(', ');
+  const preco = Number(im.preco) || 0;
+  if (tem('faixa_valor') && preco) {
+    novo.faixa_valor = 'em torno de R$ ' + preco.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + (aluguel ? '/mês' : '') + ' (valor do imóvel que escolheu)';
+  }
+  return novo;
+}
+
 /** Coloca o lead nas mãos da IA (em vez de mandar direto pra roleta). */
 export async function iniciarIa(io: SocketServer, imobiliariaId: string, leadId: string, origem: 'whatsapp' | 'formulario'): Promise<Lead | null> {
   const conf = await configIa(imobiliariaId);
   if (!conf) return null;
   const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
   if (!lead || lead.corretorId) return null;
+  const perguntas = perguntasDe(conf.cfg);
   const [row] = await db.update(leads).set({
     iaStatus: 'atendendo',
-    iaDados: dadosIniciais(lead, perguntasDe(conf.cfg)),
+    iaDados: await dadosDoImovelDeInteresse(lead, perguntas, dadosIniciais(lead, perguntas)),
     iaUltimaAtividadeEm: new Date(),
   }).where(eq(leads.id, leadId)).returning();
   registrarEvento(imobiliariaId, leadId, 'ia', origem === 'whatsapp'
@@ -485,7 +507,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       openaiKey = decifrar({ cifrado: cfg.chaveCifrada, iv: cfg.chaveIv, tag: cfg.chaveTag });
     }
 
-    const dadosAtuais = dadosIniciais(lead, perguntas);
+    const dadosAtuais = await dadosDoImovelDeInteresse(lead, perguntas, dadosIniciais(lead, perguntas));
     const faltandoAntes = perguntas.filter(p => p.obrigatoria && !dadosAtuais[p.chave]).map(p => p.chave);
     const nomesTags = new Map((await db.select({ id: tags.id, nome: tags.nome }).from(tags)
       .where(eq(tags.imobiliariaId, lead.imobiliariaId))).map(t => [t.id, t.nome]));
