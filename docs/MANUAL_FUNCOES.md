@@ -255,6 +255,22 @@ Com **"Sugerir imóveis do cadastro"** ligado (quadro "Catálogo de imóveis"):
 - **"Fotos por imóvel"**: quantas fotos mandar (padrão 3). Só vão imóveis com foto no cadastro.
 - Se o cliente veio de anúncio de um imóvel específico, esse imóvel entra sempre primeiro.
 
+### Ligar anúncios da Meta a um imóvel ("Nome na campanha")
+
+No cadastro do imóvel (menu **Imóveis → Editar**), preencha **"Nome na campanha de anúncio"** com o
+nome que o empreendimento tem no nome das campanhas. Ex.: se as campanhas se chamam
+**[NC 02][CENARIUM][FORM]**, preencha **CENARIUM**.
+
+Quando chegar um lead de formulário (Meta ou site) de uma campanha que contém esse nome:
+- o lead já chega com o **imóvel de interesse** preenchido e com **compra/aluguel** do imóvel, o
+  que manda ele pra roleta certa;
+- o Agente de IA abre a conversa falando **daquele imóvel** ("Vi que você se interessou pelo
+  lançamento de 2 quartos no Pedreira...") e pode mandar as fotos dele;
+- o nome/código da campanha **nunca** é mostrado ao cliente.
+
+Mais de um nome pro mesmo imóvel: separe por vírgula. O nome precisa aparecer como palavra inteira
+na campanha ("CENARIUM" casa com "[NC 02][CENARIUM][FORM]", mas "CENA" não).
+
 ### Áudio e região
 
 - **Áudio:** se o cliente manda áudio enquanto a IA atende, ela **entende o áudio** e responde ao
