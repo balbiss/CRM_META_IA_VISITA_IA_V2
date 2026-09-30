@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Paperclip, Flag } from 'lucide-react';
+import { Paperclip } from 'lucide-react';
+import { TagChips } from '../components/CardTagBar';
 import { useAppStore } from '../store/appStore';
 import { useRoleInfo } from '../lib/selectors';
 import { mapMsgs, type Lead } from '../lib/data';
@@ -154,12 +155,9 @@ export default function Conversas() {
                   <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.nome}</span>
-                      {(() => {
-                        const minhas = tags.filter(t => l.tags.includes(t.id));
-                        return minhas.slice(0, 3).map(t => <Flag key={t.id} size={12} strokeWidth={0} fill={t.cor} color={t.cor} style={{ flex: 'none' }} />);
-                      })()}
                       <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{diasMsg === 0 ? horaMsg : dayLabel(diasMsg) + ' ' + horaMsg}</span>
                     </span>
+                    {l.tags.length > 0 && <TagChips tags={tags.filter(t => l.tags.includes(t.id))} max={2} style={{ marginTop: 4 }} />}
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                       {l.iaStatus === 'atendendo' && (
                         <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '1px 5px', borderRadius: 4, color: '#fff', background: '#0F5E57' }}>IA</span>
@@ -193,6 +191,7 @@ export default function Conversas() {
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{CL.nome}</span>
                     <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{CL.imovel} · {CL.corretor}</span>
+                    {CL.tags.length > 0 && <TagChips tags={tags.filter(t => CL.tags.includes(t.id))} style={{ marginTop: 4 }} />}
                   </span>
                 </button>
                 <span style={css(canalPill(CL.canal))}>{CL.canal}</span>
