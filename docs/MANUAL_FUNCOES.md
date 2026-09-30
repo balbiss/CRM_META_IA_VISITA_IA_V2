@@ -258,8 +258,18 @@ Com **"Sugerir imóveis do cadastro"** ligado (quadro "Catálogo de imóveis"):
 ### Ligar anúncios da Meta a um imóvel ("Nome na campanha")
 
 No cadastro do imóvel (menu **Imóveis → Editar**), preencha **"Nome na campanha de anúncio"** com o
-nome que o empreendimento tem no nome das campanhas. Ex.: se as campanhas se chamam
-**[NC 02][CENARIUM][FORM]**, preencha **CENARIUM**.
+**nome do meio** da campanha, o que fica entre o código e o [FORM]:
+
+| Nome da campanha na Meta | O que cadastrar no imóvel |
+|---|---|
+| [NC 02]**[CENARIUM]**[FORM] | CENARIUM |
+| [NC 03]**[CAMPO DOS PALMAS]**[FORM] | CAMPO DOS PALMAS |
+
+- Copie do jeito que está na campanha. Maiúscula, minúscula e acento não fazem diferença.
+- O código da campanha (NC 02, NC 03, NC 07...) e o [FORM] são ignorados: todas as campanhas daquele
+  empreendimento caem no mesmo imóvel.
+- Cadastre o **nome inteiro**, nunca só um pedaço ("Palmas" ou "Campo" sozinhos podem pegar outra
+  campanha, tipo um futuro "CAMPO BELO").
 
 Quando chegar um lead de formulário (Meta ou site) de uma campanha que contém esse nome:
 - o lead já chega com o **imóvel de interesse** preenchido e com **compra/aluguel** do imóvel, o
@@ -268,8 +278,8 @@ Quando chegar um lead de formulário (Meta ou site) de uma campanha que contém 
   lançamento de 2 quartos no Pedreira...") e pode mandar as fotos dele;
 - o nome/código da campanha **nunca** é mostrado ao cliente.
 
-Mais de um nome pro mesmo imóvel: separe por vírgula. O nome precisa aparecer como palavra inteira
-na campanha ("CENARIUM" casa com "[NC 02][CENARIUM][FORM]", mas "CENA" não).
+Mais de um nome pro mesmo imóvel: separe por vírgula. Se dois imóveis casarem com a mesma campanha,
+vale o nome mais completo.
 
 ### Áudio e região
 
