@@ -40,7 +40,8 @@ export async function criarLead(io: SocketServer, imobId: string, dados: {
       imovelTitulo = im.titulo;
       imovelSub = [im.tipo, im.finalidade, [im.endereco, im.cidade].filter(Boolean).join(' · ')].filter(Boolean).join(' · ') || imovelSub;
       valor = im.preco;
-      if (!finalidade) finalidade = im.finalidade === 'Alugar' ? 'locacao' : im.finalidade === 'Comprar' ? 'venda' : null;
+      // o cadastro de imóvel usa "Venda"/"Aluguel" (antes só casava "Comprar"/"Alugar" e nunca batia)
+      if (!finalidade) finalidade = /alug|loca/i.test(im.finalidade) ? 'locacao' : /vend|compr/i.test(im.finalidade) ? 'venda' : null;
     }
   }
 
