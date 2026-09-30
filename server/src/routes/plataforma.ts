@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { and, eq, sql, desc, inArray } from 'drizzle-orm';
+import { and, eq, sql, desc, inArray, gte } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { imobiliarias, perfis, leads, colunasKanban, pagamentos, adminsPlataforma, sessoesWhatsapp } from '../db/schema.js';
+import { imobiliarias, perfis, leads, colunasKanban, pagamentos, adminsPlataforma, sessoesWhatsapp, iaTurnos } from '../db/schema.js';
 import { signPlatformToken } from '../lib/jwt.js';
 import { requirePlataforma } from '../middleware/plataforma.js';
 import { pararSessao, wahaConfigurado } from '../lib/waha.js';
@@ -109,6 +109,7 @@ plataformaRouter.get('/imobiliarias', async (_req, res) => {
     .from(pagamentos).where(inArray(pagamentos.imobiliariaId, ids))
     .groupBy(pagamentos.imobiliariaId);
 
+  const iaMes = await consumoIaMes(ids);
   const cMap = new Map(corretoresPorImob.map(r => [r.imobiliariaId, r.n]));
   const lMap = new Map(leadsPorImob.map(r => [r.imobiliariaId, r.n]));
   const pMap = new Map(ultimoPagto.map(r => [r.imobiliariaId, r.pagoEm]));
@@ -131,8 +132,28 @@ plataformaRouter.get('/imobiliarias', async (_req, res) => {
       : null,
     ultimoPagamento: pMap.get(i.id) || null,
     criadoEm: i.criadoEm,
+    iaLiberada: i.iaLiberada,
+    iaUsaChaveSaas: i.iaUsaChaveSaas,
+    iaMes: iaMes.get(i.id) ?? { atendimentos: 0, turnos: 0, tokensSaas: 0 },
   })));
 });
+
+/** Consumo do Agente de IA no mês corrente, por imobiliária (pra cobrança quando a chave é do SaaS). */
+async function consumoIaMes(ids: string[]) {
+  const mapa = new Map<string, { atendimentos: number; turnos: number; tokensSaas: number }>();
+  if (!ids.length) return mapa;
+  const inicioMes = new Date(); inicioMes.setDate(1); inicioMes.setHours(0, 0, 0, 0);
+  const rows = await db.select({
+    imobiliariaId: iaTurnos.imobiliariaId,
+    atendimentos: sql<number>`count(distinct ${iaTurnos.leadId})::int`,
+    turnos: sql<number>`count(*)::int`,
+    tokensSaas: sql<number>`coalesce(sum(case when ${iaTurnos.chaveSaas} then ${iaTurnos.tokens} else 0 end), 0)::int`,
+  }).from(iaTurnos)
+    .where(and(inArray(iaTurnos.imobiliariaId, ids), gte(iaTurnos.criadoEm, inicioMes)))
+    .groupBy(iaTurnos.imobiliariaId);
+  for (const r of rows) mapa.set(r.imobiliariaId, { atendimentos: r.atendimentos, turnos: r.turnos, tokensSaas: r.tokensSaas });
+  return mapa;
+}
 
 // --- criar imobiliária + dono ---
 
@@ -205,6 +226,9 @@ plataformaRouter.get('/imobiliarias/:id', async (req, res) => {
     proximoVencimento: imob.proximoVencimento,
     observacoes: imob.observacoes,
     criadoEm: imob.criadoEm,
+    iaLiberada: imob.iaLiberada,
+    iaUsaChaveSaas: imob.iaUsaChaveSaas,
+    iaMes: (await consumoIaMes([imob.id])).get(imob.id) ?? { atendimentos: 0, turnos: 0, tokensSaas: 0 },
     equipe,
     corretores: equipe.filter(e => e.role === 'corretor').length,
     leads: nLeads,
@@ -225,6 +249,8 @@ const editarSchema = z.object({
   diasCarencia: z.number().int().min(0).max(60).optional(),
   proximoVencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   observacoes: z.string().nullable().optional(),
+  iaLiberada: z.boolean().optional(),
+  iaUsaChaveSaas: z.boolean().optional(),
 });
 
 plataformaRouter.patch('/imobiliarias/:id', async (req, res) => {
@@ -242,9 +268,11 @@ plataformaRouter.patch('/imobiliarias/:id', async (req, res) => {
   if (p.diasCarencia !== undefined) patch.diasCarencia = p.diasCarencia;
   if (p.proximoVencimento !== undefined) patch.proximoVencimento = p.proximoVencimento;
   if (p.observacoes !== undefined) patch.observacoes = p.observacoes;
+  if (p.iaLiberada !== undefined) patch.iaLiberada = p.iaLiberada;
+  if (p.iaUsaChaveSaas !== undefined) patch.iaUsaChaveSaas = p.iaUsaChaveSaas;
 
   const [row] = await db.update(imobiliarias).set(patch).where(eq(imobiliarias.id, req.params.id)).returning();
-  res.json({ id: row.id, nome: row.nome, plano: row.plano, mensalidade: Number(row.mensalidade), limiteCorretores: row.limiteCorretores, diasCarencia: row.diasCarencia, proximoVencimento: row.proximoVencimento, observacoes: row.observacoes });
+  res.json({ id: row.id, nome: row.nome, plano: row.plano, mensalidade: Number(row.mensalidade), limiteCorretores: row.limiteCorretores, diasCarencia: row.diasCarencia, proximoVencimento: row.proximoVencimento, observacoes: row.observacoes, iaLiberada: row.iaLiberada, iaUsaChaveSaas: row.iaUsaChaveSaas });
 });
 
 // --- bloquear / liberar (manual) ---

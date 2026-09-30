@@ -5,6 +5,7 @@ import { db } from '../db/client.js';
 import { leads, mensagensWhatsapp } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
 import { despacharPeloWhatsapp } from './whatsapp.js';
+import { pausarIa } from '../lib/agenteIa.js';
 import type { Server as SocketServer } from 'socket.io';
 
 /** Carrega o lead e confere que quem está pedindo pode ver essa conversa: precisa ser da mesma
@@ -98,6 +99,7 @@ export function mensagensRouter(io: SocketServer) {
 
     io.to('imobiliaria:' + imobiliariaId).emit('mensagem:created', row);
     res.status(201).json(row);
+    if (lead.iaStatus === 'atendendo') void pausarIa(io, lead.id, 'alguém da equipe respondeu pelo CRM');
 
     // dispara pelo WhatsApp (central ou do corretor) sem travar a resposta;
     // se não houver sessão conectada, a mensagem fica só no histórico do CRM.

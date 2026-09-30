@@ -126,6 +126,9 @@ Quando alguém manda mensagem pela primeira vez no **número da imobiliária** c
 Se o número **já é um lead** da imobiliária, a mensagem só entra na conversa dele. Não passa pela
 roleta de novo e não gera aviso.
 
+Se o **Agente de IA** (seção 6) estiver ligado, o passo 2 muda: a IA atende e qualifica primeiro, e
+só então manda pra roleta.
+
 > **Cuidado:** hoje, parente ou amigo que manda mensagem no número da imobiliária também vira lead.
 > Uma lista de "números bloqueados" para o número central está **planejada** (ver Pendências).
 
@@ -178,9 +181,89 @@ lead e a conversa do CRM e passa a ignorar o número.
 
 ---
 
+## 6. Agente de IA (atendimento e qualificação)
+
+**Pra quem:** Dono e Gerente configuram. **Função adicional do plano**: precisa ser liberada pela
+Visita IA. Sem liberação, a tela mostra "Função não liberada no seu plano".
+
+A IA atende o cliente no WhatsApp da imobiliária, faz as perguntas de qualificação e **só depois**
+manda o lead pra roleta, que funciona igualzinho (mesma ordem justa, aviso ao corretor e follow-up).
+O corretor recebe o lead já qualificado.
+
+### Onde a IA atua (você escolhe)
+
+Menu **Ferramentas → Agente de IA → Configuração**:
+- **Quem manda mensagem pela primeira vez no WhatsApp da imobiliária**: a IA responde.
+- **Leads de formulário (Facebook, Instagram, Site)**: marque os canais em que a IA deve fazer o
+  **primeiro contato**. Ela manda a primeira mensagem já usando o que o cliente preencheu
+  (ex.: "Oi Maria, vi que você se interessou pelo apartamento no Jardim Europa...") e não repete o
+  que já foi respondido. Canal desmarcado = vai direto pra roleta, como sempre.
+
+A IA **só atua no número central** da imobiliária (nunca no WhatsApp pessoal de corretor) e **só em
+lead sem corretor**. Cliente antigo que volta a falar vai direto pro corretor dele.
+
+### O que configurar
+
+- **Nome da atendente** e **tom de voz** (cordial, formal, descontraído).
+- **Sobre a imobiliária**: o que a IA pode contar.
+- **Instruções extras** (ex.: "não trabalhamos com imóveis rurais").
+- **Perguntas de qualificação**: o que a IA precisa descobrir. Cada uma pode ser **obrigatória** e
+  ter **opções** (ex.: Comprar, Alugar). A de **finalidade** decide a roleta (compra ou aluguel).
+  Já vem uma lista pronta: finalidade, tipo de imóvel, região, faixa de valor, renda, pagamento e prazo.
+- **Etiquetas que a IA pode colocar**: escolha a etiqueta e escreva quando usar
+  (ex.: "Investidor: quando disser que é pra investir"). A IA só usa as desta lista.
+- **Desqualificação**: casos em que o lead não tem perfil (ex.: "Renda familiar abaixo de R$ 2.500").
+  Pra cada caso, escolha:
+  - **Descartar**: o lead **não vai pra roleta**, vai pro **Bolsão (Rebatidas)** com o motivo. A IA
+    se despede com educação, sem dizer o motivo. Se a IA errou, qualquer corretor pode puxar o lead.
+  - **Só etiquetar e seguir**: coloca a etiqueta escolhida e o lead segue normal pra roleta.
+- **Mensagem ao passar pro corretor**, **máximo de respostas da IA** e **tempos de espera**.
+
+### Quando a IA passa o lead pra roleta
+
+- Terminou as perguntas obrigatórias e se despediu;
+- O cliente **pediu pra falar com uma pessoa**;
+- O cliente disse que **não tem interesse**;
+- Chegou no **máximo de respostas** configurado;
+- O cliente **não respondeu ao primeiro contato** no tempo configurado (padrão: 20 min);
+- O cliente **parou de responder no meio** (padrão: 2 horas);
+- O número **não tem WhatsApp**, ou a IA teve algum erro.
+
+**Nenhum lead fica preso na IA**: em qualquer um desses casos ele vai pra roleta com o que ela já
+descobriu.
+
+### O que a equipe vê
+
+- No **Kanban**, o card mostra "IA atendendo" enquanto a IA conversa.
+- Em **Conversas**, o selo **IA** na lista e as mensagens da IA em verde-escuro com o selo
+  "Agente de IA". Dá pra acompanhar tudo ao vivo.
+- Na **ficha do lead**, o quadro **"Qualificação feita pelo Agente de IA"** com as respostas
+  (ex.: Finalidade: Comprar · Região: Umarizal · Renda familiar: 12000). É o que o corretor lê antes
+  de ligar.
+- **Atendimentos da IA** (aba na tela do Agente): cada resposta da IA, o que o cliente disse, o que
+  ela entendeu e por que passou pra roleta ou descartou.
+
+### Assumir a conversa
+
+- **Assumir** (em Conversas, Dono/Gerente): a IA para naquele lead e a equipe continua.
+- **Passar pra roleta**: encerra a IA na hora e distribui com o que ela já coletou.
+- Se alguém da equipe **responder o cliente** (pelo CRM ou pelo celular do número), a IA para
+  sozinha naquele lead.
+- Atribuir ou descartar o lead na mão também tira ele da IA.
+- **Desligar o agente**: os leads que ela estava atendendo vão pra roleta.
+
+### Chave da IA (custo)
+
+A Visita IA define no plano de cada imobiliária:
+- **Incluída no plano**: nada a configurar.
+- **Chave própria**: a imobiliária cola a chave da OpenAI dela na tela do Agente (fica guardada
+  criptografada). O custo das conversas fica na conta OpenAI dela.
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
 
 - **Números bloqueados no número central**: impedir que parentes/amigos do dono virem lead ao
   mandar mensagem no WhatsApp da imobiliária.
-- **Agente de IA** que atende, qualifica e só depois manda o lead para a roleta certa (desenho
-  combinado: a IA conversa e anota as respostas; quem decide a roleta é o CRM).
+- **Agente de IA, próximas etapas**: resumo da qualificação dentro do aviso de WhatsApp ao
+  corretor; a IA consultar o catálogo de imóveis e agendar visita.

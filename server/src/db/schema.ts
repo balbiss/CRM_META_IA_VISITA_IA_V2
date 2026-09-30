@@ -11,7 +11,10 @@ export const sessaoEscopoEnum = pgEnum('sessao_escopo', ['central', 'corretor'])
 export const sessaoStatusEnum = pgEnum('sessao_status', ['desconectada', 'conectando', 'conectada']);
 export const canalEnum = pgEnum('canal', ['WhatsApp', 'Instagram', 'Facebook', 'Indicacao', 'Manual', 'Site']);
 export const direcaoEnum = pgEnum('direcao', ['in', 'out']);
-export const mensagemCanalEnum = pgEnum('mensagem_canal', ['corretor', 'followup']);
+export const mensagemCanalEnum = pgEnum('mensagem_canal', ['corretor', 'followup', 'ia']);
+// null = a IA nunca tocou nesse lead. 'transferido' = a IA terminou e mandou pra roleta.
+// 'pausado' = um humano assumiu no meio.
+export const iaStatusEnum = pgEnum('ia_status', ['atendendo', 'transferido', 'pausado']);
 export const aoEsgotarEnum = pgEnum('ao_esgotar', ['nada', 'descartar', 'mover']);
 export const execucaoStatusEnum = pgEnum('execucao_status', ['ativa', 'pausada', 'encerrada']);
 export const roletaFinalidadeEnum = pgEnum('roleta_finalidade', ['venda', 'locacao', 'ambos']);
@@ -45,6 +48,10 @@ export const imobiliarias = pgTable('imobiliarias', {
   // (2) a roleta IGNORA se o corretor está "em plantão" (todo membro não bloqueado é candidato,
   // a qualquer hora) e (3) o front pula o popup de Aceitar/Recusar (a atribuição é definitiva).
   notificarCorretorWhatsapp: boolean('notificar_corretor_whatsapp').notNull().default(false),
+  // Liberado pelo dono do SaaS (painel Plataforma). Sem isso a imobiliária nem vê o Agente de IA.
+  iaLiberada: boolean('ia_liberada').notNull().default(false),
+  // true = a IA roda na chave OpenAI do SaaS; false = a imobiliária precisa cadastrar a própria.
+  iaUsaChaveSaas: boolean('ia_usa_chave_saas').notNull().default(true),
 
   // --- Gestão da assinatura (painel Dono do SaaS) ---
   status: imobiliariaStatusEnum('status').notNull().default('ativa'),
@@ -172,6 +179,16 @@ export const leads = pgTable('leads', {
   motivoDescarte: text('motivo_descarte'),
   rendaDeclarada: numeric('renda_declarada', { precision: 14, scale: 2 }),
   entrouNaColunaEm: timestamp('entrou_na_coluna_em', { withTimezone: true }).notNull().defaultNow(),
+  // --- Agente de IA (SDR) ---
+  iaStatus: iaStatusEnum('ia_status'),
+  // Respostas que a IA já coletou, por chave de pergunta ({ finalidade: 'Comprar', bairro: 'Centro' }).
+  iaDados: jsonb('ia_dados').$type<Record<string, string>>().notNull().default({}),
+  iaResumo: text('ia_resumo'),
+  iaTurnos: integer('ia_turnos').notNull().default(0),
+  iaMsgsCliente: integer('ia_msgs_cliente').notNull().default(0),
+  iaUltimaAtividadeEm: timestamp('ia_ultima_atividade_em', { withTimezone: true }),
+  // Mensagem do cliente ainda sem resposta da IA (garante o turno mesmo se o servidor reiniciar).
+  iaAguardandoDesde: timestamp('ia_aguardando_desde', { withTimezone: true }),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   // Postgres não indexa FK automaticamente — sem isso, toda listagem de leads (a query mais
@@ -333,6 +350,59 @@ export const tarefas = pgTable('tarefas', {
 
 /** Linha do tempo de um lead — um registro por evento (criado, mudou de coluna, distribuído,
  *  mensagem, tarefa, nota manual, descarte). O nome do ator é gravado como snapshot. */
+export type PerguntaIa = { chave: string; rotulo: string; pergunta: string; obrigatoria: boolean; opcoes?: string[] };
+/** Etiqueta que a IA pode aplicar, e quando. */
+export type EtiquetaIa = { tagId: string; quando: string };
+/** Critério de desqualificação: 'descartar' = vai pro bolsão sem passar pela roleta;
+ *  'seguir' = só aplica a etiqueta (se tiver) e segue o fluxo normal. */
+export type CriterioIa = { chave: string; descricao: string; acao: 'descartar' | 'seguir'; tagId?: string | null };
+
+/** Configuração do Agente de IA (SDR) de cada imobiliária. Campos em vez de prompt livre:
+ *  quem monta o prompt é o workflow n8n, a partir daqui. */
+export const agentesIa = pgTable('agentes_ia', {
+  imobiliariaId: uuid('imobiliaria_id').primaryKey().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  ativo: boolean('ativo').notNull().default(false),
+  nomeAgente: text('nome_agente').notNull().default('Ana'),
+  tom: text('tom').notNull().default('cordial'),
+  apresentacao: text('apresentacao').notNull().default(''),
+  instrucoesExtras: text('instrucoes_extras').notNull().default(''),
+  perguntas: jsonb('perguntas').$type<PerguntaIa[]>().notNull().default([]),
+  etiquetas: jsonb('etiquetas').$type<EtiquetaIa[]>().notNull().default([]),
+  criterios: jsonb('criterios').$type<CriterioIa[]>().notNull().default([]),
+  mensagemPassagem: text('mensagem_passagem').notNull().default('Perfeito! Já passei suas informações para um dos nossos corretores, que vai falar com você em instantes.'),
+  maxMensagens: integer('max_mensagens').notNull().default(12),
+  atenderWhatsapp: boolean('atender_whatsapp').notNull().default(true),
+  // Canais de formulário em que a IA faz o PRIMEIRO contato ('Facebook' | 'Instagram' | 'Site').
+  primeiroContatoCanais: jsonb('primeiro_contato_canais').$type<string[]>().notNull().default([]),
+  minutosSemResposta: integer('minutos_sem_resposta').notNull().default(20),
+  minutosAbandono: integer('minutos_abandono').notNull().default(120),
+  // Chave OpenAI própria da imobiliária (AES-256-GCM, mesmo esquema do token do Facebook).
+  chaveCifrada: text('chave_cifrada'),
+  chaveIv: text('chave_iv'),
+  chaveTag: text('chave_tag'),
+  modelo: text('modelo').notNull().default('gpt-4.1-mini'),
+  atualizadoEm: timestamp('atualizado_em', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Log de cada rodada da IA — pra mostrar à imobiliária o que ela entendeu e por que passou. */
+export const iaTurnos = pgTable('ia_turnos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  leadNome: text('lead_nome').notNull(),
+  entrada: text('entrada'),
+  resposta: text('resposta'),
+  campos: jsonb('campos').$type<Record<string, string>>().notNull().default({}),
+  decisao: text('decisao').notNull(),
+  erro: text('erro'),
+  // Consumo da chamada à OpenAI (pra cobrança quando a chave é do SaaS).
+  tokens: integer('tokens').notNull().default(0),
+  chaveSaas: boolean('chave_saas').notNull().default(true),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  imobiliariaIdx: index('ia_turnos_imobiliaria_id_idx').on(table.imobiliariaId),
+}));
+
 export const eventosLead = pgTable('eventos_lead', {
   id: uuid('id').primaryKey().defaultRandom(),
   imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),

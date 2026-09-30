@@ -43,6 +43,15 @@ export default function Conversas() {
 
   const thread = (l: Lead) => chats[l.id] || [];
 
+  const acaoIa = async (l: Lead, acao: 'assumir' | 'passar') => {
+    try {
+      await apiFetch('/api/agente-ia/leads/' + l.id + '/' + acao, token, { method: 'POST' });
+      toast(acao === 'assumir' ? 'Pronto — a IA parou e a conversa é da equipe' : 'Lead enviado pra roleta');
+    } catch (e) {
+      toast((e as Error).message || 'Não foi possível');
+    }
+  };
+
   const marcarPessoal = (l: Lead) => {
     ask(
       'Essa conversa é pessoal?',
@@ -152,6 +161,9 @@ export default function Conversas() {
                       <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{diasMsg === 0 ? horaMsg : dayLabel(diasMsg) + ' ' + horaMsg}</span>
                     </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      {l.iaStatus === 'atendendo' && (
+                        <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', padding: '1px 5px', borderRadius: 4, color: '#fff', background: '#0F5E57' }}>IA</span>
+                      )}
                       <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4, color: l.canal === 'WhatsApp' ? 'var(--olive)' : (l.canal === 'Instagram' || l.canal === 'Facebook') ? 'var(--terra)' : 'var(--muted)', background: l.canal === 'WhatsApp' ? 'var(--oliveSoft)' : (l.canal === 'Instagram' || l.canal === 'Facebook') ? 'var(--terraSoft)' : 'var(--line)' }}>{l.canal}</span>
                       <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: (resumo?.naoLidas ?? 0) > 0 ? 'var(--ink)' : 'var(--muted)', fontWeight: (resumo?.naoLidas ?? 0) > 0 ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(resumo?.direcao === 'out' ? 'Você: ' : '') + legendaAnexo}</span>
                       {(resumo?.naoLidas ?? 0) > 0 && (
@@ -184,6 +196,15 @@ export default function Conversas() {
                   </span>
                 </button>
                 <span style={css(canalPill(CL.canal))}>{CL.canal}</span>
+                {CL.iaStatus === 'atendendo' && (
+                  <span style={{ padding: '4px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#0F5E57', color: '#fff', whiteSpace: 'nowrap' }}>IA atendendo</span>
+                )}
+                {isManager && CL.iaStatus === 'atendendo' && (
+                  <button onClick={() => acaoIa(CL, 'assumir')} title="A IA para e a equipe assume a conversa" style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>Assumir</button>
+                )}
+                {isManager && !CL.corretor && (CL.iaStatus === 'atendendo' || CL.iaStatus === 'pausado') && (
+                  <button onClick={() => acaoIa(CL, 'passar')} title="Encerra a IA e manda o lead pra roleta agora" style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>Passar pra roleta</button>
+                )}
                 {contatos.espelho && CL.canal === 'WhatsApp' && CL.corretor === meNome && (
                   <button onClick={() => marcarPessoal(CL)} title="Tirar essa conversa do CRM (é pessoal)" style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', color: 'var(--muted)' }}>Conversa pessoal</button>
                 )}
@@ -202,6 +223,7 @@ export default function Conversas() {
                     <div style={css(m.rowStyle)}>
                       <span style={css(m.bubbleStyle)}>
                         {m.bot && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', background: 'rgba(255,255,255,.18)', padding: '3px 8px', borderRadius: 20, marginBottom: 7 }}>Follow-up automático</span>}
+                        {m.ia && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', background: 'rgba(255,255,255,.18)', padding: '3px 8px', borderRadius: 20, marginBottom: 7 }}>Agente de IA</span>}
                         {m.anexoUrl && <AnexoMensagem url={m.anexoUrl} tipo={m.anexoTipo} nome={m.anexoNome} onLoad={paraOFim} />}
                         {m.texto && <span style={{ display: 'block' }}>{m.texto}</span>}
                         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 10.5, opacity: 0.75, marginTop: 5 }}>{m.stamp}<Visto estado={m.visto} /></span>

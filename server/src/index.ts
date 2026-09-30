@@ -33,6 +33,8 @@ import { ensureBucket } from './lib/storage.js';
 import { bootstrapAdminPlataforma, varrerInadimplencia } from './lib/bootstrapPlataforma.js';
 import { varrerTarefasVencidas } from './lib/tarefas.js';
 import { varrerFollowups } from './lib/followup.js';
+import { varrerIa } from './lib/agenteIa.js';
+import { agenteIaRouter } from './routes/agenteIa.js';
 
 const app = express();
 // O webhook do formulário de site é público (token na URL) e a página fica em domínio de
@@ -89,6 +91,7 @@ app.use('/api/followup', followupRouter(io));
 app.use('/api/sites', sitesRouter(io));
 app.use('/api/avisos-corretor', avisosCorretorRouter());
 app.use('/api/contatos-whatsapp', contatosWhatsappRouter(io));
+app.use('/api/agente-ia', agenteIaRouter(io));
 
 const port = Number(process.env.PORT) || 3001;
 
@@ -103,6 +106,7 @@ setInterval(() => {
 const varrerMinuto = () => {
   varrerTarefasVencidas(io).catch(err => console.error('Tarefas: varredura falhou —', err.message));
   varrerFollowups(io).catch(err => console.error('Follow-up: varredura falhou —', err.message));
+  varrerIa(io).catch(err => console.error('Agente IA: varredura falhou —', err.message));
 };
 varrerMinuto();
 setInterval(varrerMinuto, 60 * 1000);

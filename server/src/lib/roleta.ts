@@ -100,8 +100,11 @@ async function escolherRoleta(
 export async function distribuirLead(io: SocketServer, imobiliariaId: string, leadId: string): Promise<string | null> {
   const [dados] = await db.select({
     canal: leads.canal, finalidade: leads.finalidade, sessaoWhatsappId: leads.sessaoWhatsappId, corretorId: leads.corretorId,
+    iaStatus: leads.iaStatus,
   }).from(leads).where(eq(leads.id, leadId)).limit(1);
-  if (!dados || dados.corretorId) return null;
+  // Lead nas mãos do Agente de IA não entra na roleta (nem pelo "distribuir pendentes" do plantão):
+  // quem manda pra roleta, quando terminar, é o próprio agente (lib/agenteIa.ts).
+  if (!dados || dados.corretorId || dados.iaStatus === 'atendendo') return null;
 
   const roleta = await escolherRoleta(imobiliariaId, dados);
   if (!roleta) return null;

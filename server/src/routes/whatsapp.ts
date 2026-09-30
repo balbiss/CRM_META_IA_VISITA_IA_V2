@@ -7,6 +7,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { wahaConfigurado, criarSessao, pararSessao, statusSessao, qrSessao, webhookSecret, fotoPerfil, baixarMidiaMensagem } from '../lib/waha.js';
 import { uploadFile } from '../lib/storage.js';
 import { distribuirLead } from '../lib/roleta.js';
+import { configIa, iniciarIa, ehEcoDaIa, pausarIa, mensagemDoCliente } from '../lib/agenteIa.js';
 import { enviarPush } from '../lib/push.js';
 import { registrarEvento } from '../lib/eventos.js';
 import { pausarPorResposta } from '../lib/followup.js';
@@ -167,13 +168,20 @@ export function whatsappRouter(io: SocketServer) {
         lead = novo;
         registrarEvento(sessao.imobiliariaId, novo.id, 'criado', 'Lead criado pela primeira mensagem no WhatsApp', novo.nome);
         io.to('imobiliaria:' + sessao.imobiliariaId).emit('lead:created', novo);
-        // modo central: sem corretor fixo -> roleta. modo corretor: já nasceu com o dono da sessão.
+        // modo central: sem corretor fixo -> Agente de IA (se ligado) ou roleta.
+        // modo corretor: já nasceu com o dono da sessão.
         if (!novo.corretorId) {
-          const leadNovoId = novo.id, imobNovo = sessao.imobiliariaId;
-          void distribuirLead(io, imobNovo, leadNovoId).catch(e => console.error('roleta wa:', (e as Error).message));
+          const conf = sessao.escopo === 'central' ? await configIa(sessao.imobiliariaId) : null;
+          const comIa = conf?.cfg.atenderWhatsapp ? await iniciarIa(io, sessao.imobiliariaId, novo.id, 'whatsapp') : null;
+          if (comIa) lead = comIa;
+          else void distribuirLead(io, sessao.imobiliariaId, novo.id).catch(e => console.error('roleta wa:', (e as Error).message));
         }
       }
       if (!lead) return;
+
+      // Eco de mensagem que a própria IA mandou: ela já gravou a dela, e não é "humano respondendo".
+      if (fromMe && ehEcoDaIa(lead.id, texto)) return;
+      if (fromMe && lead.iaStatus === 'atendendo') void pausarIa(io, lead.id, 'alguém respondeu pelo celular');
 
       // Carimba por qual número o lead entrou (se ainda não tiver).
       if (!lead.sessaoWhatsappId) {
@@ -259,6 +267,7 @@ export function whatsappRouter(io: SocketServer) {
 
       // lead respondeu -> pausa a régua de follow-up (o corretor assume)
       if (!fromMe) void pausarPorResposta(io, sessao.imobiliariaId, lead.id);
+      if (!fromMe && lead.iaStatus === 'atendendo') void mensagemDoCliente(io, lead.id);
 
       // mensagem RECEBIDA -> push pro corretor dono do lead (mesmo com o CRM fechado)
       if (!fromMe && lead.corretorId) {

@@ -152,6 +152,12 @@ export function LeadModal() {
                   </div>
                 ))}
               </div>
+              {L.iaResumo && (
+                <div style={{ marginTop: 16, padding: '12px 14px', border: '1px solid #0F5E57', borderRadius: 10, background: 'var(--card)' }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0F5E57', fontWeight: 700 }}>Qualificação feita pelo Agente de IA</p>
+                  {L.iaResumo.split('\n').map(linha => <p key={linha} style={{ margin: '2px 0', fontSize: 13.5 }}>{linha}</p>)}
+                </div>
+              )}
               {(() => {
                 const imv = L.imovelInteresseId ? imoveis.find(i => i.id === L.imovelInteresseId) : null;
                 if (!L.imovel && !imv) return null;
@@ -262,6 +268,7 @@ export function LeadModal() {
                     <div style={css(m.rowStyle)}>
                       <span style={css(m.bubbleStyle)}>
                         {m.bot && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', background: 'rgba(255,255,255,.18)', padding: '3px 8px', borderRadius: 20, marginBottom: 7 }}>Follow-up automático</span>}
+                        {m.ia && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', background: 'rgba(255,255,255,.18)', padding: '3px 8px', borderRadius: 20, marginBottom: 7 }}>Agente de IA</span>}
                         {m.anexoUrl && <AnexoMensagem url={m.anexoUrl} tipo={m.anexoTipo} nome={m.anexoNome} onLoad={paraOFimChat} />}
                         {m.texto && <span style={{ display: 'block' }}>{m.texto}</span>}
                         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, fontSize: 10.5, opacity: 0.75, marginTop: 5 }}>{m.stamp}<Visto estado={m.visto} /></span>

@@ -143,7 +143,23 @@ export async function checarNumero(sessionName: string, numero: string): Promise
   }
 }
 
-export type MensagemHistorico = { id: string; timestamp: number; fromMe: boolean; body?: string | null; hasMedia?: boolean };
+/** Envia texto usando o chatId que o próprio WhatsApp resolve (check-exists, pode ser @lid) —
+ *  evita o "no LID found" com contato que nunca falou com o número. Devolve o id da mensagem.
+ *  Lança 'NUMERO_INEXISTENTE' se o número não tem WhatsApp. */
+export async function enviarTextoResolvido(sessionName: string, numero: string, texto: string): Promise<{ id: string | null }> {
+  const fone = numero.replace(/[^0-9]/g, '');
+  const chk = await waha<{ numberExists?: boolean; chatId?: string }>(
+    `/api/contacts/check-exists?phone=${encodeURIComponent(fone)}&session=${encodeURIComponent(sessionName)}`,
+  ).catch(() => null);
+  if (chk && chk.numberExists === false) throw new Error('NUMERO_INEXISTENTE');
+  const r = await waha<{ id?: string | { _serialized?: string }; key?: { id?: string } }>('/api/sendText', {
+    method: 'POST', body: { session: sessionName, chatId: chk?.chatId || chatId(fone), text: texto },
+  });
+  const id = typeof r?.id === 'string' ? r.id : r?.id?._serialized || r?.key?.id || null;
+  return { id };
+}
+
+export type MensagemHistorico ={ id: string; timestamp: number; fromMe: boolean; body?: string | null; hasMedia?: boolean };
 
 /** Últimas mensagens de uma conversa, direto do WhatsApp (mais nova primeiro). Usa o chatId
  *  resolvido pelo check-exists (pode ser @lid), que é o que o WhatsApp de fato reconhece. */

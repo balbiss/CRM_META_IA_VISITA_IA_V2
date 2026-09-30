@@ -1,0 +1,422 @@
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import type { Server as SocketServer } from 'socket.io';
+import { db } from '../db/client.js';
+import { agentesIa, colunasKanban, iaTurnos, imobiliarias, leads, leadTags, mensagensWhatsapp, sessoesWhatsapp, tags, type CriterioIa, type PerguntaIa } from '../db/schema.js';
+import { registrarEvento } from './eventos.js';
+import { distribuirLead } from './roleta.js';
+import { enviarTextoResolvido } from './waha.js';
+import { decifrar } from './crypto.js';
+
+/* Agente de IA (SDR).
+ * Regra de ouro: enquanto a IA atende, o lead fica SEM corretor; quando ela termina, o CRM chama
+ * a MESMA roleta de sempre (distribuirLead) — follow-up, aviso ao corretor, push etc. continuam
+ * disparando de lá, sem mudança. A IA (via n8n) só conversa e extrai campos; quem decide quando
+ * passar e pra qual roleta é este arquivo. */
+
+export const PERGUNTAS_PADRAO: PerguntaIa[] = [
+  { chave: 'finalidade', rotulo: 'Finalidade', pergunta: 'Se procura imóvel para comprar ou para alugar', obrigatoria: true, opcoes: ['Comprar', 'Alugar'] },
+  { chave: 'tipo_imovel', rotulo: 'Tipo de imóvel', pergunta: 'Que tipo de imóvel procura (casa, apartamento, terreno, sala comercial...)', obrigatoria: true },
+  { chave: 'regiao', rotulo: 'Região', pergunta: 'Em qual bairro, região ou cidade', obrigatoria: true },
+  { chave: 'faixa_valor', rotulo: 'Faixa de valor', pergunta: 'Quanto pretende investir (ou o valor de aluguel que cabe no bolso)', obrigatoria: true },
+  { chave: 'renda', rotulo: 'Renda familiar', pergunta: 'A renda familiar mensal aproximada (principalmente se for financiar), perguntando com delicadeza', obrigatoria: false },
+  { chave: 'pagamento', rotulo: 'Forma de pagamento', pergunta: 'Como pretende pagar (financiamento, à vista, FGTS, consórcio)', obrigatoria: false },
+  { chave: 'prazo', rotulo: 'Prazo', pergunta: 'Para quando precisa do imóvel', obrigatoria: false },
+];
+
+const DEBOUNCE_MS = 8000;
+const timers = new Map<string, NodeJS.Timeout>();
+const processando = new Set<string>();
+const repetir = new Set<string>();
+// Mensagens que a própria IA acabou de mandar: quando o WAHA devolve o "eco" (fromMe) pelo
+// webhook, não pode ser confundido com um humano respondendo (senão a IA pausaria a si mesma).
+const ecos = new Map<string, { texto: string; ate: number }[]>();
+// Ritmo do primeiro contato (mensagem ativa pra quem nunca falou com o número) — anti-bloqueio.
+const proximoSlot = new Map<string, number>();
+const primeiroAgendado = new Set<string>();
+const INTERVALO_PRIMEIRO_CONTATO_MS = 20000;
+
+type Config = typeof agentesIa.$inferSelect;
+type Lead = typeof leads.$inferSelect;
+
+export async function configIa(imobiliariaId: string): Promise<{ cfg: Config; usaChaveSaas: boolean; nomeImob: string } | null> {
+  const [imob] = await db.select({ liberada: imobiliarias.iaLiberada, usaChaveSaas: imobiliarias.iaUsaChaveSaas, nome: imobiliarias.nome })
+    .from(imobiliarias).where(eq(imobiliarias.id, imobiliariaId)).limit(1);
+  if (!imob?.liberada) return null;
+  const [cfg] = await db.select().from(agentesIa).where(eq(agentesIa.imobiliariaId, imobiliariaId)).limit(1);
+  if (!cfg?.ativo) return null;
+  return { cfg, usaChaveSaas: imob.usaChaveSaas, nomeImob: imob.nome };
+}
+
+const perguntasDe = (cfg: Config) => (cfg.perguntas?.length ? cfg.perguntas : PERGUNTAS_PADRAO);
+
+export function ehEcoDaIa(leadId: string, texto: string | null): boolean {
+  const lista = ecos.get(leadId);
+  if (!lista || !texto) return false;
+  const agora = Date.now();
+  const vivos = lista.filter(e => e.ate > agora);
+  const i = vivos.findIndex(e => e.texto.trim() === texto.trim());
+  if (i >= 0) vivos.splice(i, 1);
+  if (vivos.length) ecos.set(leadId, vivos); else ecos.delete(leadId);
+  return i >= 0;
+}
+
+function dadosIniciais(lead: Lead, perguntas: PerguntaIa[]): Record<string, string> {
+  const dados: Record<string, string> = { ...(lead.iaDados || {}) };
+  if (lead.finalidade && perguntas.some(p => p.chave === 'finalidade') && !dados.finalidade) {
+    dados.finalidade = lead.finalidade === 'locacao' ? 'Alugar' : 'Comprar';
+  }
+  return dados;
+}
+
+/** Coloca o lead nas mãos da IA (em vez de mandar direto pra roleta). */
+export async function iniciarIa(io: SocketServer, imobiliariaId: string, leadId: string, origem: 'whatsapp' | 'formulario'): Promise<Lead | null> {
+  const conf = await configIa(imobiliariaId);
+  if (!conf) return null;
+  const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+  if (!lead || lead.corretorId) return null;
+  const [row] = await db.update(leads).set({
+    iaStatus: 'atendendo',
+    iaDados: dadosIniciais(lead, perguntasDe(conf.cfg)),
+    iaUltimaAtividadeEm: new Date(),
+  }).where(eq(leads.id, leadId)).returning();
+  registrarEvento(imobiliariaId, leadId, 'ia', origem === 'whatsapp'
+    ? 'Agente de IA começou o atendimento'
+    : 'Agente de IA vai fazer o primeiro contato pelo WhatsApp', 'Agente de IA');
+  io.to('imobiliaria:' + imobiliariaId).emit('lead:updated', row);
+
+  if (origem === 'formulario') {
+    const agora = Date.now();
+    const slot = Math.max(agora, (proximoSlot.get(imobiliariaId) || 0) + INTERVALO_PRIMEIRO_CONTATO_MS);
+    proximoSlot.set(imobiliariaId, slot);
+    primeiroAgendado.add(leadId);
+    setTimeout(() => { primeiroAgendado.delete(leadId); void rodarTurno(io, leadId, 'primeiro_contato'); }, slot - agora + 3000);
+  }
+  return row;
+}
+
+/** Mensagem nova do cliente num lead que a IA está atendendo: junta as picadas e responde. */
+export async function mensagemDoCliente(io: SocketServer, leadId: string) {
+  await db.update(leads).set({
+    iaMsgsCliente: sql`${leads.iaMsgsCliente} + 1`,
+    iaUltimaAtividadeEm: new Date(),
+    iaAguardandoDesde: sql`coalesce(${leads.iaAguardandoDesde}, now())`,
+  }).where(eq(leads.id, leadId));
+  agendar(io, leadId, DEBOUNCE_MS);
+}
+
+function agendar(io: SocketServer, leadId: string, ms: number) {
+  const t = timers.get(leadId);
+  if (t) clearTimeout(t);
+  timers.set(leadId, setTimeout(() => { timers.delete(leadId); void rodarTurno(io, leadId, 'mensagem'); }, ms));
+}
+
+/** Um humano assumiu (respondeu pelo CRM ou pelo celular) → a IA sai de cena nesse lead. */
+export async function pausarIa(io: SocketServer, leadId: string, motivo: string) {
+  const t = timers.get(leadId);
+  if (t) { clearTimeout(t); timers.delete(leadId); }
+  const [row] = await db.update(leads).set({ iaStatus: 'pausado', iaAguardandoDesde: null })
+    .where(and(eq(leads.id, leadId), eq(leads.iaStatus, 'atendendo'))).returning();
+  if (!row) return;
+  registrarEvento(row.imobiliariaId, leadId, 'ia', 'Agente de IA pausado: ' + motivo, 'Agente de IA');
+  io.to('imobiliaria:' + row.imobiliariaId).emit('lead:updated', row);
+}
+
+const MOTIVOS: Record<string, string> = {
+  completo: 'qualificação completa',
+  pediu_humano: 'o cliente pediu pra falar com uma pessoa',
+  sem_interesse: 'o cliente disse que não tem interesse',
+  limite: 'limite de mensagens da IA atingido',
+  sem_resposta: 'o cliente não respondeu ao primeiro contato',
+  abandono: 'o cliente parou de responder',
+  numero_invalido: 'o número não tem WhatsApp',
+  erro: 'a IA teve um erro',
+  ia_desligada: 'o Agente de IA foi desligado',
+  manual: 'passado manualmente',
+};
+
+function detectarFinalidade(valor?: string): 'venda' | 'locacao' | null {
+  if (!valor) return null;
+  if (/alug|loca/i.test(valor)) return 'locacao';
+  if (/compr|vend|invest/i.test(valor)) return 'venda';
+  return null;
+}
+
+/** Fim do atendimento da IA: grava o resumo e entrega pra roleta de sempre. */
+export async function passarParaRoleta(io: SocketServer, leadId: string, motivo: keyof typeof MOTIVOS | string) {
+  const t = timers.get(leadId);
+  if (t) { clearTimeout(t); timers.delete(leadId); }
+  const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+  if (!lead || (lead.iaStatus !== 'atendendo' && lead.iaStatus !== 'pausado')) return;
+  const [cfg] = await db.select().from(agentesIa).where(eq(agentesIa.imobiliariaId, lead.imobiliariaId)).limit(1);
+  const perguntas = cfg ? perguntasDe(cfg) : PERGUNTAS_PADRAO;
+  const dados = lead.iaDados || {};
+  const resumo = resumoDe(perguntas, dados);
+  const finalidade = lead.finalidade ?? detectarFinalidade(dados.finalidade);
+
+  const [row] = await db.update(leads).set({ iaStatus: 'transferido', iaResumo: resumo, finalidade, iaAguardandoDesde: null })
+    .where(eq(leads.id, leadId)).returning();
+  registrarEvento(lead.imobiliariaId, leadId, 'ia',
+    'Agente de IA passou pra roleta — ' + (MOTIVOS[motivo] || motivo) + (resumo ? '. ' + resumo.replace(/\n/g, ' · ') : ''),
+    'Agente de IA');
+  io.to('imobiliaria:' + lead.imobiliariaId).emit('lead:updated', row);
+  await distribuirLead(io, lead.imobiliariaId, leadId);
+}
+
+function resumoDe(perguntas: PerguntaIa[], dados: Record<string, string>) {
+  return perguntas.filter(p => dados[p.chave]).map(p => p.rotulo + ': ' + dados[p.chave]).join('\n') || null;
+}
+
+/** Desqualificado com ação "descartar": NÃO passa pela roleta — vai pro bolsão (Rebatidas) com o
+ *  motivo, igual a um descarte manual. Fica disponível pra um corretor puxar se a IA errou. */
+async function descartarPelaIa(io: SocketServer, leadId: string, crit: CriterioIa, perguntas: PerguntaIa[]) {
+  const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+  if (!lead) return;
+  const [rebatida] = await db.select({ id: colunasKanban.id }).from(colunasKanban)
+    .where(and(eq(colunasKanban.imobiliariaId, lead.imobiliariaId), eq(colunasKanban.slug, 'rebatida'))).limit(1);
+  const [row] = await db.update(leads).set({
+    iaStatus: 'transferido', iaAguardandoDesde: null,
+    iaResumo: resumoDe(perguntas, lead.iaDados || {}),
+    motivoDescarte: 'Desqualificado pela IA: ' + crit.descricao,
+    ...(rebatida ? { colunaId: rebatida.id, entrouNaColunaEm: new Date() } : {}),
+  }).where(eq(leads.id, leadId)).returning();
+  registrarEvento(lead.imobiliariaId, leadId, 'descarte', 'Agente de IA desqualificou o lead: ' + crit.descricao + ' — foi pro bolsão (Rebatidas)', 'Agente de IA');
+  io.to('imobiliaria:' + lead.imobiliariaId).emit('lead:updated', row);
+}
+
+async function aplicarEtiquetas(io: SocketServer, lead: Lead, tagIds: string[]) {
+  if (!tagIds.length) return;
+  const validas = (await db.select({ id: tags.id }).from(tags).where(eq(tags.imobiliariaId, lead.imobiliariaId))).map(t => t.id);
+  const aplicar = [...new Set(tagIds)].filter(id => validas.includes(id));
+  if (!aplicar.length) return;
+  await db.insert(leadTags).values(aplicar.map(tagId => ({ leadId: lead.id, tagId }))).onConflictDoNothing();
+  const atuais = await db.select({ tagId: leadTags.tagId }).from(leadTags).where(eq(leadTags.leadId, lead.id));
+  io.to('imobiliaria:' + lead.imobiliariaId).emit('lead:tags', { leadId: lead.id, tagIds: atuais.map(a => a.tagId) });
+}
+
+async function sessaoCentral(lead: Lead) {
+  if (lead.sessaoWhatsappId) {
+    const [s] = await db.select().from(sessoesWhatsapp)
+      .where(and(eq(sessoesWhatsapp.id, lead.sessaoWhatsappId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
+    if (s) return s;
+  }
+  const [s] = await db.select().from(sessoesWhatsapp)
+    .where(and(eq(sessoesWhatsapp.imobiliariaId, lead.imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
+  return s ?? null;
+}
+
+export async function temCentralConectada(imobiliariaId: string) {
+  const [s] = await db.select({ id: sessoesWhatsapp.id }).from(sessoesWhatsapp)
+    .where(and(eq(sessoesWhatsapp.imobiliariaId, imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
+  return !!s;
+}
+
+async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string) {
+  const sessao = await sessaoCentral(lead);
+  if (!sessao) throw new Error('nenhum número central conectado');
+  const lista = ecos.get(lead.id) || [];
+  lista.push({ texto, ate: Date.now() + 120000 });
+  ecos.set(lead.id, lista);
+  const { id } = await enviarTextoResolvido(sessao.sessionName, lead.telefone, texto);
+  const [row] = await db.insert(mensagensWhatsapp).values({
+    leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, ackStatus: 2, texto,
+  }).onConflictDoNothing().returning();
+  if (!lead.sessaoWhatsappId) await db.update(leads).set({ sessaoWhatsappId: sessao.id }).where(eq(leads.id, lead.id));
+  if (row) io.to('imobiliaria:' + lead.imobiliariaId).emit('mensagem:created', row);
+}
+
+type RespostaN8n = {
+  ok?: boolean; resposta?: string; campos?: Record<string, unknown>; encerrar?: boolean; pediuHumano?: boolean; semInteresse?: boolean;
+  etiquetas?: string[]; desqualificacao?: string | null; tokens?: number; erro?: string;
+};
+
+async function chamarN8n(payload: unknown): Promise<RespostaN8n> {
+  const url = process.env.N8N_AGENTE_IA_WEBHOOK_URL;
+  if (!url) throw new Error('N8N_AGENTE_IA_WEBHOOK_URL não configurada');
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const r = await fetch(url, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-agente-secret': process.env.N8N_AGENTE_IA_SECRET || '' },
+      body: JSON.stringify(payload),
+    });
+    const txt = await r.text();
+    if (!r.ok) throw new Error('n8n ' + r.status + ' ' + txt.slice(0, 200));
+    const j = JSON.parse(txt) as RespostaN8n;
+    if (j.ok === false) throw new Error(j.erro || 'n8n devolveu erro');
+    return j;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function registrarTurno(lead: Lead, dados: {
+  entrada: string | null; resposta: string | null; campos: Record<string, string>; decisao: string; erro?: string | null; tokens?: number; chaveSaas: boolean;
+}) {
+  await db.insert(iaTurnos).values({
+    imobiliariaId: lead.imobiliariaId, leadId: lead.id, leadNome: lead.nome,
+    entrada: dados.entrada, resposta: dados.resposta, campos: dados.campos, decisao: dados.decisao,
+    erro: dados.erro ?? null, tokens: dados.tokens ?? 0, chaveSaas: dados.chaveSaas,
+  }).catch(e => console.error('ia turno log:', (e as Error).message));
+}
+
+async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' | 'primeiro_contato') {
+  if (processando.has(leadId)) { repetir.add(leadId); return; }
+  processando.add(leadId);
+  const inicio = new Date();
+  try {
+    const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+    if (!lead || lead.iaStatus !== 'atendendo') return;
+    if (evento === 'primeiro_contato' && (lead.iaTurnos > 0 || lead.iaMsgsCliente > 0)) return;
+    const conf = await configIa(lead.imobiliariaId);
+    if (!conf) { await passarParaRoleta(io, leadId, 'ia_desligada'); return; }
+    const { cfg } = conf;
+    const perguntas = perguntasDe(cfg);
+
+    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo })
+      .from(mensagensWhatsapp).where(eq(mensagensWhatsapp.leadId, leadId))
+      .orderBy(desc(mensagensWhatsapp.enviadoEm)).limit(20)).reverse();
+    const historico = msgs.map(m => ({
+      papel: m.direcao === 'in' ? 'cliente' : 'atendente',
+      texto: m.texto || (m.anexoTipo ? '[o cliente mandou ' + m.anexoTipo + ']' : ''),
+    })).filter(m => m.texto);
+    let ultimaSaida = -1;
+    historico.forEach((m, i) => { if (m.papel === 'atendente') ultimaSaida = i; });
+    const entrada = historico.slice(ultimaSaida + 1).map(m => m.texto).join('\n') || null;
+
+    let openaiKey: string | null = null;
+    if (!conf.usaChaveSaas) {
+      if (!cfg.chaveCifrada || !cfg.chaveIv || !cfg.chaveTag) {
+        await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'passar:erro', erro: 'Chave OpenAI própria não cadastrada', chaveSaas: false });
+        await passarParaRoleta(io, leadId, 'erro');
+        return;
+      }
+      openaiKey = decifrar({ cifrado: cfg.chaveCifrada, iv: cfg.chaveIv, tag: cfg.chaveTag });
+    }
+
+    const dadosAtuais = dadosIniciais(lead, perguntas);
+    const faltandoAntes = perguntas.filter(p => p.obrigatoria && !dadosAtuais[p.chave]).map(p => p.chave);
+    const nomesTags = new Map((await db.select({ id: tags.id, nome: tags.nome }).from(tags)
+      .where(eq(tags.imobiliariaId, lead.imobiliariaId))).map(t => [t.id, t.nome]));
+    const etiquetasPermitidas = (cfg.etiquetas || []).filter(e => nomesTags.has(e.tagId))
+      .map(e => ({ id: e.tagId, nome: nomesTags.get(e.tagId)!, quando: e.quando }));
+    const criterios = cfg.criterios || [];
+    const payload = {
+      evento,
+      imobiliariaId: lead.imobiliariaId,
+      leadId,
+      imobiliariaNome: conf.nomeImob,
+      agente: {
+        nome: cfg.nomeAgente, tom: cfg.tom, apresentacao: cfg.apresentacao, instrucoesExtras: cfg.instrucoesExtras,
+        mensagemPassagem: cfg.mensagemPassagem, modelo: cfg.modelo,
+      },
+      perguntas,
+      etiquetas: etiquetasPermitidas,
+      criterios: criterios.map(c => ({ chave: c.chave, descricao: c.descricao })),
+      dados: dadosAtuais,
+      faltando: faltandoAntes,
+      lead: { nome: lead.nome, canal: lead.canal, campanha: lead.campanha, imovel: lead.imovelTitulo },
+      historico,
+      openaiKey,
+    };
+
+    let r: RespostaN8n;
+    try {
+      r = await chamarN8n(payload);
+    } catch (e1) {
+      await new Promise(res => setTimeout(res, 4000));
+      try {
+        r = await chamarN8n(payload);
+      } catch (e2) {
+        await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'passar:erro', erro: (e2 as Error).message, chaveSaas: !openaiKey });
+        await passarParaRoleta(io, leadId, 'erro');
+        return;
+      }
+    }
+
+    // Só aceita campos que existem na configuração (a IA não inventa chave nova).
+    const novos: Record<string, string> = {};
+    for (const p of perguntas) {
+      const v = r.campos?.[p.chave];
+      if (typeof v === 'string' && v.trim()) novos[p.chave] = v.trim().slice(0, 200);
+    }
+    const dados = { ...dadosAtuais, ...novos };
+    const turnos = lead.iaTurnos + 1;
+    const faltando = perguntas.filter(p => p.obrigatoria && !dados[p.chave]);
+
+    // Etiquetas: só as que a imobiliária liberou pra IA; desqualificação: só um critério cadastrado.
+    const crit = r.desqualificacao ? criterios.find(c => c.chave === r.desqualificacao) : undefined;
+    const tagsAplicar = (r.etiquetas || []).filter(id => etiquetasPermitidas.some(e => e.id === id));
+    if (crit?.tagId) tagsAplicar.push(crit.tagId);
+    await aplicarEtiquetas(io, lead, tagsAplicar);
+
+    let decisao = 'continuar';
+    if (r.pediuHumano) decisao = 'passar:pediu_humano';
+    else if (crit?.acao === 'descartar') decisao = 'descartar:' + crit.chave;
+    else if (r.semInteresse) decisao = 'passar:sem_interesse';
+    // Completo = obrigatórias preenchidas E a IA encerrou (não deixou pergunta no ar pro cliente).
+    else if (faltando.length === 0 && r.encerrar) decisao = 'passar:completo';
+    else if (turnos >= cfg.maxMensagens) decisao = 'passar:limite';
+
+    const resposta = (r.resposta || '').trim();
+    let erroEnvio: string | null = null;
+    if (resposta) {
+      try {
+        await enviarPelaIa(io, lead, resposta);
+      } catch (e) {
+        erroEnvio = (e as Error).message;
+        if (erroEnvio === 'NUMERO_INEXISTENTE') decisao = 'passar:numero_invalido';
+      }
+    }
+    if (decisao === 'passar:limite' && cfg.mensagemPassagem && !erroEnvio) {
+      await enviarPelaIa(io, lead, cfg.mensagemPassagem).catch(() => {});
+    }
+
+    await db.update(leads).set({
+      iaDados: dados, iaTurnos: turnos, iaUltimaAtividadeEm: new Date(),
+      // só limpa o "aguardando" se não chegou mensagem nova do cliente enquanto a IA pensava
+      iaAguardandoDesde: sql`case when ${leads.iaAguardandoDesde} <= ${inicio.toISOString()}::timestamptz then null else ${leads.iaAguardandoDesde} end`,
+    }).where(eq(leads.id, leadId));
+
+    const camposLog = { ...novos };
+    if (tagsAplicar.length) camposLog['etiquetas'] = tagsAplicar.map(id => nomesTags.get(id) || '?').join(', ');
+    if (crit) camposLog['desqualificação'] = crit.descricao;
+    await registrarTurno(lead, { entrada, resposta: resposta || null, campos: camposLog, decisao, erro: erroEnvio, tokens: r.tokens || 0, chaveSaas: !openaiKey });
+
+    const [atual] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+    if (atual) io.to('imobiliaria:' + atual.imobiliariaId).emit('lead:updated', atual);
+    if (decisao.startsWith('passar:')) await passarParaRoleta(io, leadId, decisao.slice(7));
+    else if (decisao.startsWith('descartar:') && crit) await descartarPelaIa(io, leadId, crit, perguntas);
+  } catch (e) {
+    console.error('agente IA:', (e as Error).message);
+  } finally {
+    processando.delete(leadId);
+    if (repetir.delete(leadId)) agendar(io, leadId, 1500);
+  }
+}
+
+/** Varredura de minuto: nenhum lead fica preso na IA, e nenhum turno se perde num restart. */
+export async function varrerIa(io: SocketServer) {
+  const ativos = await db.select().from(leads).where(eq(leads.iaStatus, 'atendendo')).orderBy(asc(leads.criadoEm));
+  if (!ativos.length) return;
+  const confPorImob = new Map<string, Awaited<ReturnType<typeof configIa>>>();
+  const agora = Date.now();
+  for (const lead of ativos) {
+    if (processando.has(lead.id) || timers.has(lead.id) || primeiroAgendado.has(lead.id)) continue;
+    if (!confPorImob.has(lead.imobiliariaId)) confPorImob.set(lead.imobiliariaId, await configIa(lead.imobiliariaId));
+    const conf = confPorImob.get(lead.imobiliariaId);
+    if (!conf) { await passarParaRoleta(io, lead.id, 'ia_desligada'); continue; }
+
+    const ultima = lead.iaUltimaAtividadeEm?.getTime() ?? lead.criadoEm.getTime();
+    const min = (agora - ultima) / 60000;
+    if (lead.iaAguardandoDesde && agora - lead.iaAguardandoDesde.getTime() > 60000) {
+      void rodarTurno(io, lead.id, 'mensagem');
+    } else if (lead.iaTurnos === 0 && lead.iaMsgsCliente === 0 && min > 2) {
+      void rodarTurno(io, lead.id, 'primeiro_contato');
+    } else if (lead.iaMsgsCliente === 0 && lead.iaTurnos > 0 && min > conf.cfg.minutosSemResposta) {
+      await passarParaRoleta(io, lead.id, 'sem_resposta');
+    } else if (lead.iaMsgsCliente > 0 && !lead.iaAguardandoDesde && min > conf.cfg.minutosAbandono) {
+      await passarParaRoleta(io, lead.id, 'abandono');
+    }
+  }
+}

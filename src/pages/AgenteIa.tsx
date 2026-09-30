@@ -1,0 +1,339 @@
+import { useEffect, useState } from 'react';
+import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { useAppStore } from '../store/appStore';
+import { apiFetch } from '../lib/api';
+
+type Pergunta = { chave?: string; rotulo: string; pergunta: string; obrigatoria: boolean; opcoes?: string[] };
+type EtiquetaIa = { tagId: string; quando: string };
+type CriterioIa = { chave?: string; descricao: string; acao: 'descartar' | 'seguir'; tagId?: string | null };
+type Config = {
+  ativo: boolean; nomeAgente: string; tom: 'cordial' | 'formal' | 'descontraido'; apresentacao: string; instrucoesExtras: string;
+  perguntas: Pergunta[]; etiquetas: EtiquetaIa[]; criterios: CriterioIa[]; mensagemPassagem: string; maxMensagens: number; atenderWhatsapp: boolean;
+  primeiroContatoCanais: string[]; minutosSemResposta: number; minutosAbandono: number;
+  modelo: 'gpt-4.1-mini' | 'gpt-4.1' | 'gpt-4o-mini';
+};
+type Resposta = { liberada: boolean; usaChaveSaas: boolean; chaveFinal: string | null; config: Config | null; perguntasPadrao: Pergunta[] };
+type Turno = { id: string; leadNome: string; entrada: string | null; resposta: string | null; campos: Record<string, string>; decisao: string; erro: string | null; criadoEm: string };
+
+const PADRAO = (perguntas: Pergunta[]): Config => ({
+  ativo: false, nomeAgente: 'Ana', tom: 'cordial', apresentacao: '', instrucoesExtras: '', perguntas, etiquetas: [], criterios: [],
+  mensagemPassagem: 'Perfeito! Já passei suas informações para um dos nossos corretores, que vai falar com você em instantes.',
+  maxMensagens: 12, atenderWhatsapp: true, primeiroContatoCanais: [], minutosSemResposta: 20, minutosAbandono: 120, modelo: 'gpt-4.1-mini',
+});
+
+const DECISOES: Record<string, string> = {
+  continuar: 'Continuou a conversa',
+  'passar:completo': 'Passou pra roleta — qualificação completa',
+  'passar:pediu_humano': 'Passou pra roleta — cliente pediu uma pessoa',
+  'passar:sem_interesse': 'Passou pra roleta — cliente sem interesse',
+  'passar:limite': 'Passou pra roleta — limite de mensagens',
+  'passar:numero_invalido': 'Passou pra roleta — número sem WhatsApp',
+  'passar:erro': 'Passou pra roleta — erro na IA',
+};
+const legendaDecisao = (d: string) => DECISOES[d] || (d.startsWith('descartar:') ? 'Desqualificado — foi pro bolsão (Rebatidas)' : d);
+
+const inp: React.CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, boxSizing: 'border-box' };
+const lbl: React.CSSProperties = { display: 'block', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted)', margin: '0 0 6px', fontWeight: 700 };
+const card: React.CSSProperties = { border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', padding: 18, marginBottom: 16 };
+const dataBr = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+export default function AgenteIa() {
+  const token = useAppStore(s => s.token);
+  const toast = useAppStore(s => s.toast);
+  const tagsImob = useAppStore(s => s.tags);
+  const [aba, setAba] = useState<'config' | 'atendimentos'>('config');
+  const [dados, setDados] = useState<Resposta | null>(null);
+  const [cfg, setCfg] = useState<Config | null>(null);
+  const [chave, setChave] = useState<string | undefined>(undefined);
+  const [salvando, setSalvando] = useState(false);
+  const [turnos, setTurnos] = useState<Turno[] | null>(null);
+
+  const carregar = () => apiFetch<Resposta>('/api/agente-ia', token).then(r => {
+    setDados(r);
+    setCfg(r.config ? { ...r.config, etiquetas: r.config.etiquetas ?? [], criterios: r.config.criterios ?? [] } : PADRAO(r.perguntasPadrao));
+    setChave(undefined);
+  }).catch(e => toast((e as Error).message));
+
+  useEffect(() => { void carregar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    if (aba !== 'atendimentos') return;
+    const buscar = () => apiFetch<Turno[]>('/api/agente-ia/turnos', token).then(setTurnos).catch(() => setTurnos([]));
+    void buscar();
+    const t = setInterval(buscar, 15000);
+    return () => clearInterval(t);
+  }, [aba, token]);
+
+  if (!dados || !cfg) return <p style={{ color: 'var(--muted)', fontSize: 13 }}>Carregando…</p>;
+
+  const cabecalho = (
+    <div style={{ marginBottom: 16 }}>
+      <p style={{ fontSize: 11, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--muted)', margin: '0 0 4px' }}>Ferramentas</p>
+      <h1 style={{ fontFamily: 'Newsreader,serif', fontWeight: 400, fontSize: 24, margin: 0, lineHeight: 1.2 }}>Agente de IA</h1>
+    </div>
+  );
+
+  if (!dados.liberada) {
+    return (
+      <div style={{ maxWidth: 680 }}>
+        {cabecalho}
+        <div style={card}>
+          <p style={{ margin: '0 0 6px', fontWeight: 700 }}>Função não liberada no seu plano</p>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+            O Agente de IA atende quem chama no WhatsApp da imobiliária (e, se você quiser, faz o primeiro contato com leads de
+            formulário), faz as perguntas de qualificação e só então manda o lead pra roleta. Fale com o suporte pra liberar.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const set = <K extends keyof Config>(k: K, v: Config[K]) => setCfg({ ...cfg, [k]: v });
+  const setPergunta = (i: number, p: Partial<Pergunta>) => set('perguntas', cfg.perguntas.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  const moverPergunta = (i: number, d: number) => {
+    const j = i + d;
+    if (j < 0 || j >= cfg.perguntas.length) return;
+    const arr = [...cfg.perguntas];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    set('perguntas', arr);
+  };
+  const toggleCanal = (c: string) => set('primeiroContatoCanais', cfg.primeiroContatoCanais.includes(c) ? cfg.primeiroContatoCanais.filter(x => x !== c) : [...cfg.primeiroContatoCanais, c]);
+
+  const salvar = async () => {
+    setSalvando(true);
+    try {
+      await apiFetch('/api/agente-ia', token, { method: 'PUT', body: JSON.stringify({ ...cfg, ...(chave !== undefined ? { chaveOpenai: chave } : {}) }) });
+      toast('Agente de IA salvo');
+      await carregar();
+    } catch (e) {
+      toast((e as Error).message || 'Não foi possível salvar');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 820 }}>
+      {cabecalho}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {([['config', 'Configuração'], ['atendimentos', 'Atendimentos da IA']] as const).map(([v, t]) => (
+          <button key={v} onClick={() => setAba(v)} style={{
+            padding: '8px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+            border: '1px solid ' + (aba === v ? 'var(--terra)' : 'var(--line)'),
+            background: aba === v ? 'var(--terraSoft)' : 'var(--card)', color: aba === v ? 'var(--terra)' : 'var(--ink)',
+          }}>{t}</button>
+        ))}
+      </div>
+
+      {aba === 'atendimentos' ? (
+        <div style={{ border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', overflow: 'hidden' }}>
+          {turnos === null && <p style={{ padding: 20, fontSize: 13, color: 'var(--muted)' }}>Carregando…</p>}
+          {turnos?.length === 0 && <p style={{ padding: 20, fontSize: 13, color: 'var(--muted)' }}>Nenhum atendimento da IA ainda.</p>}
+          {turnos?.map(t => (
+            <div key={t.id} style={{ padding: '12px 18px', borderBottom: '1px solid var(--line)', fontSize: 13 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{dataBr(t.criadoEm)}</span>
+                <span style={{ fontWeight: 700 }}>{t.leadNome}</span>
+                <span style={{ fontSize: 12, color: t.decisao.startsWith('passar') ? 'var(--olive)' : t.decisao.startsWith('descartar') ? 'var(--terra)' : 'var(--muted)', fontWeight: 600 }}>{legendaDecisao(t.decisao)}</span>
+              </div>
+              {t.entrada && <p style={{ margin: '6px 0 0', color: 'var(--muted)' }}><b>Cliente:</b> {t.entrada}</p>}
+              {t.resposta && <p style={{ margin: '4px 0 0' }}><b>IA:</b> {t.resposta}</p>}
+              {Object.keys(t.campos || {}).length > 0 && (
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#0F5E57' }}>
+                  <b>Entendeu:</b> {Object.entries(t.campos).map(([k, v]) => k + ': ' + v).join(' · ')}
+                </p>
+              )}
+              {t.erro && <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--terra)' }}><b>Erro:</b> {t.erro}</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div style={card}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 700 }}>
+              <input type="checkbox" checked={cfg.ativo} onChange={e => set('ativo', e.target.checked)} />
+              Agente de IA ligado
+            </label>
+            <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              Desligado, tudo funciona como antes: o lead vai direto pra roleta. Ligado, a IA conversa primeiro e passa pra roleta
+              quando terminar. Os leads que a IA já está atendendo são entregues à roleta assim que você desligar.
+            </p>
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Onde a IA atua</p>
+            <label style={{ display: 'flex', gap: 8, fontSize: 13, marginBottom: 10 }}>
+              <input type="checkbox" checked={cfg.atenderWhatsapp} onChange={e => set('atenderWhatsapp', e.target.checked)} />
+              Atender quem manda mensagem pela primeira vez no WhatsApp da imobiliária
+            </label>
+            <p style={{ fontSize: 13, margin: '0 0 6px' }}>Fazer o primeiro contato com leads de formulário:</p>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 6 }}>
+              {['Facebook', 'Instagram', 'Site'].map(c => (
+                <label key={c} style={{ display: 'flex', gap: 6, fontSize: 13 }}>
+                  <input type="checkbox" checked={cfg.primeiroContatoCanais.includes(c)} onChange={() => toggleCanal(c)} /> {c}
+                </label>
+              ))}
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              Canal desmarcado = o lead vai direto pra roleta, como hoje. A IA só atua no número central (nunca no WhatsApp pessoal
+              de corretor) e só em lead sem corretor.
+            </p>
+          </div>
+
+          <div style={card}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={lbl}>Nome da atendente</label>
+                <input style={inp} value={cfg.nomeAgente} onChange={e => set('nomeAgente', e.target.value)} />
+              </div>
+              <div>
+                <label style={lbl}>Tom de voz</label>
+                <select style={inp} value={cfg.tom} onChange={e => set('tom', e.target.value as Config['tom'])}>
+                  <option value="cordial">Cordial</option>
+                  <option value="formal">Formal</option>
+                  <option value="descontraido">Descontraído</option>
+                </select>
+              </div>
+            </div>
+            <label style={lbl}>Sobre a imobiliária (o que a IA pode contar)</label>
+            <textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} value={cfg.apresentacao} onChange={e => set('apresentacao', e.target.value)}
+              placeholder="Ex.: Somos a Imobiliária X, há 15 anos em Belém, trabalhamos com venda e aluguel de casas e apartamentos na região metropolitana." />
+            <label style={{ ...lbl, marginTop: 14 }}>Instruções extras (opcional)</label>
+            <textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} value={cfg.instrucoesExtras} onChange={e => set('instrucoesExtras', e.target.value)}
+              placeholder="Ex.: Não trabalhamos com imóveis rurais. Se perguntarem de financiamento, diga que o corretor explica as opções." />
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Perguntas de qualificação</p>
+            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              A IA descobre essas informações conversando, uma ou duas por vez. Quando todas as <b>obrigatórias</b> estiverem
+              respondidas, o lead vai pra roleta. A pergunta de <b>finalidade</b> (comprar/alugar) é o que escolhe a roleta certa.
+            </p>
+            {cfg.perguntas.map((p, i) => (
+              <div key={i} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                  <input style={{ ...inp, flex: 1, fontWeight: 600 }} value={p.rotulo} onChange={e => setPergunta(i, { rotulo: e.target.value })} placeholder="Nome curto (ex.: Bairro)" />
+                  <label style={{ display: 'flex', gap: 5, fontSize: 12, whiteSpace: 'nowrap' }}>
+                    <input type="checkbox" checked={p.obrigatoria} onChange={e => setPergunta(i, { obrigatoria: e.target.checked })} /> Obrigatória
+                  </label>
+                  <button title="Subir" onClick={() => moverPergunta(i, -1)} style={{ border: 'none', background: 'none', color: 'var(--muted)' }}><ArrowUp size={14} /></button>
+                  <button title="Descer" onClick={() => moverPergunta(i, 1)} style={{ border: 'none', background: 'none', color: 'var(--muted)' }}><ArrowDown size={14} /></button>
+                  <button title="Remover" onClick={() => set('perguntas', cfg.perguntas.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: 'var(--terra)' }}><Trash2 size={14} /></button>
+                </div>
+                <input style={{ ...inp, marginBottom: 8 }} value={p.pergunta} onChange={e => setPergunta(i, { pergunta: e.target.value })} placeholder="O que a IA precisa descobrir" />
+                <input style={inp} value={(p.opcoes || []).join(', ')}
+                  onChange={e => setPergunta(i, { opcoes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                  placeholder="Opções, separadas por vírgula (opcional). Ex.: Comprar, Alugar" />
+              </div>
+            ))}
+            <button onClick={() => set('perguntas', [...cfg.perguntas, { rotulo: '', pergunta: '', obrigatoria: false }])}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', fontSize: 12.5, fontWeight: 600 }}>
+              <Plus size={14} /> Adicionar pergunta
+            </button>
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Etiquetas que a IA pode colocar</p>
+            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              A IA só usa as etiquetas desta lista, e só quando a situação descrita acontecer.
+              {tagsImob.length === 0 && ' Crie etiquetas primeiro (no card de um lead, botão de bandeira).'}
+            </p>
+            {cfg.etiquetas.map((e, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <select style={{ ...inp, width: 180, flex: 'none' }} value={e.tagId} onChange={ev => set('etiquetas', cfg.etiquetas.map((x, j) => (j === i ? { ...x, tagId: ev.target.value } : x)))}>
+                  {tagsImob.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+                </select>
+                <input style={{ ...inp, flex: 1, minWidth: 200 }} value={e.quando} placeholder="Quando usar (ex.: quando disser que é pra investir)"
+                  onChange={ev => set('etiquetas', cfg.etiquetas.map((x, j) => (j === i ? { ...x, quando: ev.target.value } : x)))} />
+                <button title="Remover" onClick={() => set('etiquetas', cfg.etiquetas.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: 'var(--terra)' }}><Trash2 size={14} /></button>
+              </div>
+            ))}
+            {tagsImob.length > 0 && (
+              <button onClick={() => set('etiquetas', [...cfg.etiquetas, { tagId: tagsImob[0].id, quando: '' }])}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', fontSize: 12.5, fontWeight: 600 }}>
+                <Plus size={14} /> Adicionar etiqueta
+              </button>
+            )}
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Quando o lead não tem perfil (desqualificação)</p>
+            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              Se a conversa mostrar um desses casos, a IA avisa o CRM. <b>Descartar</b>: o lead não vai pra roleta — vai pro bolsão
+              (Rebatidas) com o motivo, e um corretor ainda pode puxar se a IA errou. <b>Só etiquetar</b>: aplica a etiqueta e segue normal.
+              Pra IA julgar renda, por exemplo, inclua uma pergunta de renda na lista acima.
+            </p>
+            {cfg.criterios.map((c, i) => (
+              <div key={i} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                <input style={{ ...inp, marginBottom: 8 }} value={c.descricao} placeholder="Ex.: Renda familiar abaixo de R$ 2.500"
+                  onChange={ev => set('criterios', cfg.criterios.map((x, j) => (j === i ? { ...x, descricao: ev.target.value } : x)))} />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select style={{ ...inp, width: 190, flex: 'none' }} value={c.acao} onChange={ev => set('criterios', cfg.criterios.map((x, j) => (j === i ? { ...x, acao: ev.target.value as CriterioIa['acao'] } : x)))}>
+                    <option value="descartar">Descartar (vai pro bolsão)</option>
+                    <option value="seguir">Só etiquetar e seguir</option>
+                  </select>
+                  <select style={{ ...inp, width: 190, flex: 'none' }} value={c.tagId ?? ''} onChange={ev => set('criterios', cfg.criterios.map((x, j) => (j === i ? { ...x, tagId: ev.target.value || null } : x)))}>
+                    <option value="">Sem etiqueta</option>
+                    {tagsImob.map(t => <option key={t.id} value={t.id}>Etiqueta: {t.nome}</option>)}
+                  </select>
+                  <button title="Remover" onClick={() => set('criterios', cfg.criterios.filter((_, j) => j !== i))} style={{ border: 'none', background: 'none', color: 'var(--terra)' }}><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
+            <button onClick={() => set('criterios', [...cfg.criterios, { descricao: '', acao: 'descartar', tagId: null }])}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'none', fontSize: 12.5, fontWeight: 600 }}>
+              <Plus size={14} /> Adicionar critério
+            </button>
+          </div>
+
+          <div style={card}>
+            <label style={lbl}>Mensagem ao passar pro corretor</label>
+            <textarea style={{ ...inp, minHeight: 60, resize: 'vertical' }} value={cfg.mensagemPassagem} onChange={e => set('mensagemPassagem', e.target.value)} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginTop: 14 }}>
+              <div>
+                <label style={lbl}>Máx. de respostas da IA</label>
+                <input type="number" style={inp} value={cfg.maxMensagens} min={3} max={40} onChange={e => set('maxMensagens', Number(e.target.value))} />
+              </div>
+              <div>
+                <label style={lbl}>Sem resposta ao 1º contato (min)</label>
+                <input type="number" style={inp} value={cfg.minutosSemResposta} min={5} onChange={e => set('minutosSemResposta', Number(e.target.value))} />
+              </div>
+              <div>
+                <label style={lbl}>Cliente sumiu no meio (min)</label>
+                <input type="number" style={inp} value={cfg.minutosAbandono} min={15} onChange={e => set('minutosAbandono', Number(e.target.value))} />
+              </div>
+            </div>
+            <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              Em qualquer desses casos o lead vai pra roleta com o que a IA já coletou — nenhum lead fica preso na IA.
+            </p>
+          </div>
+
+          <div style={card}>
+            <p style={{ ...lbl, fontSize: 12 }}>Chave da OpenAI</p>
+            {dados.usaChaveSaas ? (
+              <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)' }}>Incluída no seu plano — não precisa configurar nada.</p>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+                  O seu plano usa a sua própria chave da OpenAI (o custo das conversas fica na sua conta OpenAI).
+                  {dados.chaveFinal ? ' Chave atual: ' + dados.chaveFinal : ' Nenhuma chave cadastrada.'}
+                </p>
+                <input style={inp} type="password" placeholder={dados.chaveFinal ? 'Cole uma nova chave pra trocar' : 'sk-...'}
+                  value={chave ?? ''} onChange={e => setChave(e.target.value)} autoComplete="off" />
+              </>
+            )}
+            <label style={{ ...lbl, marginTop: 14 }}>Modelo</label>
+            <select style={inp} value={cfg.modelo} onChange={e => set('modelo', e.target.value as Config['modelo'])}>
+              <option value="gpt-4.1-mini">GPT-4.1 mini (recomendado)</option>
+              <option value="gpt-4.1">GPT-4.1 (mais caro)</option>
+              <option value="gpt-4o-mini">GPT-4o mini (mais barato)</option>
+            </select>
+          </div>
+
+          <button onClick={salvar} disabled={salvando} style={{ padding: '11px 22px', border: 'none', borderRadius: 8, background: 'var(--terra)', color: '#fff', fontSize: 13.5, fontWeight: 600, opacity: salvando ? 0.6 : 1 }}>
+            {salvando ? 'Salvando…' : 'Salvar'}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}

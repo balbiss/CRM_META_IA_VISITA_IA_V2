@@ -123,14 +123,21 @@ export function leadsRouter(io: SocketServer) {
       ? and(eq(leads.id, req.params.id), eq(leads.imobiliariaId, imobiliariaId), eq(leads.corretorId, sub))
       : and(eq(leads.id, req.params.id), eq(leads.imobiliariaId, imobiliariaId));
 
-    const [antes] = await db.select({ corretorId: leads.corretorId, motivoDescarte: leads.motivoDescarte })
+    const [antes] = await db.select({ corretorId: leads.corretorId, motivoDescarte: leads.motivoDescarte, iaStatus: leads.iaStatus })
       .from(leads).where(scoped).limit(1);
     const { rendaDeclarada, ...rest } = parsed.data;
+    // Atribuir ou descartar na mão tira o lead das mãos do Agente de IA.
+    const tiraDaIa = antes?.iaStatus === 'atendendo' && (!!rest.corretorId || !!rest.motivoDescarte);
     const [row] = await db.update(leads)
-      .set({ ...rest, ...(rendaDeclarada != null ? { rendaDeclarada: rendaDeclarada.toString() } : {}) })
+      .set({
+        ...rest,
+        ...(rendaDeclarada != null ? { rendaDeclarada: rendaDeclarada.toString() } : {}),
+        ...(tiraDaIa ? { iaStatus: 'pausado' as const, iaAguardandoDesde: null } : {}),
+      })
       .where(scoped)
       .returning();
     if (!row) return res.status(404).json({ error: 'Lead não encontrado' });
+    if (tiraDaIa) registrarEvento(imobiliariaId, row.id, 'ia', 'Agente de IA pausado: o lead foi ' + (rest.motivoDescarte ? 'descartado' : 'atribuído') + ' manualmente', nome);
     if (rest.corretorId !== undefined && rest.corretorId !== antes?.corretorId) {
       if (rest.corretorId) {
         const [c] = await db.select({ nome: perfis.nome }).from(perfis).where(eq(perfis.id, rest.corretorId)).limit(1);

@@ -352,7 +352,7 @@ export default function Kanban() {
                             <span style={{ display: 'block', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.nome}</span>
                             <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)', marginTop: 2, minWidth: 0 }}>
                               <FileText size={11} strokeWidth={2} style={{ flex: 'none' }} />
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.corretor || 'Sem corretor'}</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.corretor || (l.iaStatus === 'atendendo' ? 'IA atendendo' : 'Sem corretor')}</span>
                             </span>
                           </span>
                         </div>
