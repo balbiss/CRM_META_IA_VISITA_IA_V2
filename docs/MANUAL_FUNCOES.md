@@ -225,10 +225,15 @@ lead sem corretor**. Cliente antigo que volta a falar vai direto pro corretor de
     uma opção que se encaixe (padrão), **ou** um texto fixo seu, sem citar motivo nenhum. O cliente
     nunca fica sem resposta.
 - **Mensagem ao passar pro corretor**, **máximo de respostas da IA** e **tempos de espera**.
+- **Apresentação**: na primeira resposta a IA se apresenta pelo nome e pela imobiliária, com
+  bom dia/boa tarde/boa noite conforme a hora ("Oi, boa noite! Aqui é a Ana, da InoovaWeb Imóveis 😊").
+  Ela não diz que é IA; só se o cliente perguntar diretamente, responde com honestidade que é uma
+  assistente virtual e que um corretor vai continuar.
 - **Jeito humano**:
   - **Espera antes de responder** (padrão 8 segundos): pra quem manda a mensagem em pedaços
     ("oi" · "tudo bem?" · "vi o anúncio"), cada mensagem nova reinicia a contagem, e a IA responde
-    tudo de uma vez quando o cliente para de digitar.
+    tudo de uma vez quando o cliente para de digitar. Se ele mandar mais alguma coisa enquanto a IA
+    está "digitando", ela refaz a resposta considerando tudo, e nunca manda a mesma resposta duas vezes.
   - **Lida + "digitando…"**: depois da espera, a mensagem do cliente fica com o visto azul, aparece
     "digitando…" por um tempo proporcional ao tamanho da resposta, e às vezes a resposta vem em dois
     balões, como uma pessoa faria.

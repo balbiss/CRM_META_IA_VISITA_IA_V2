@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
 import {
@@ -433,10 +433,17 @@ async function registrarTurno(lead: Lead, dados: {
   }).catch(e => console.error('ia turno log:', (e as Error).message));
 }
 
-async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' | 'primeiro_contato') {
+async function chegouMensagemNova(leadId: string, depoisDe: Date) {
+  const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(mensagensWhatsapp)
+    .where(and(eq(mensagensWhatsapp.leadId, leadId), eq(mensagensWhatsapp.direcao, 'in'), gt(mensagensWhatsapp.enviadoEm, depoisDe)));
+  return (r?.n ?? 0) > 0;
+}
+
+async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' | 'primeiro_contato', refeitas = 0) {
   if (processando.has(leadId)) { repetir.add(leadId); return; }
   processando.add(leadId);
   const inicio = new Date();
+  let refazer = false;
   try {
     const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
     if (!lead || lead.iaStatus !== 'atendendo') return;
@@ -446,9 +453,11 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const { cfg } = conf;
     const perguntas = perguntasDe(cfg);
 
-    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo, transcricao: mensagensWhatsapp.transcricao })
+    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo, transcricao: mensagensWhatsapp.transcricao, enviadoEm: mensagensWhatsapp.enviadoEm })
       .from(mensagensWhatsapp).where(eq(mensagensWhatsapp.leadId, leadId))
       .orderBy(desc(mensagensWhatsapp.enviadoEm)).limit(20)).reverse();
+    // Até onde a IA "leu": se chegar mensagem do cliente depois disso, a resposta fica velha.
+    const vistoAte = msgs.length ? msgs[msgs.length - 1].enviadoEm : inicio;
     const historico = msgs.map(m => ({
       papel: m.direcao === 'in' ? 'cliente' : 'atendente',
       texto: [m.texto, m.transcricao ? '[áudio]: ' + m.transcricao : null].filter(Boolean).join('\n')
@@ -457,6 +466,11 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     let ultimaSaida = -1;
     historico.forEach((m, i) => { if (m.papel === 'atendente') ultimaSaida = i; });
     const entrada = historico.slice(ultimaSaida + 1).map(m => m.texto).join('\n') || null;
+    // Nada novo do cliente depois da última resposta → não responde (evita mandar a mesma coisa 2x).
+    if (evento === 'mensagem' && !entrada) {
+      await db.update(leads).set({ iaAguardandoDesde: null }).where(eq(leads.id, leadId));
+      return;
+    }
 
     let openaiKey: string | null = null;
     if (!conf.usaChaveSaas) {
@@ -582,12 +596,23 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
           await dormir(Math.max(0, tempoDigitacao(baloes[i]) - jaDigitou));
           await presenca(alvo.sessao, alvo.chatId, 'parar');
         }
+        // O cliente mandou mais coisa enquanto a IA pensava/digitava: como uma pessoa faria, joga
+        // fora a resposta e refaz considerando tudo (no máx. 2x, pra quem não para de digitar).
+        if (i === 0 && evento === 'mensagem' && refeitas < 2 && await chegouMensagemNova(leadId, vistoAte)) {
+          refazer = true;
+          break;
+        }
         await enviarPelaIa(io, lead, baloes[i], alvo?.chatId);
         if (i < baloes.length - 1) await dormir(700);
       }
     } catch (e) {
       erroEnvio = (e as Error).message;
       if (erroEnvio === 'NUMERO_INEXISTENTE') decisao = 'passar:numero_invalido';
+    }
+    if (refazer) {
+      // nada foi enviado nem decidido: só registra o consumo e refaz (no finally)
+      await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'refeito', tokens: r.tokens || 0, chaveSaas: !openaiKey });
+      return;
     }
     if (alvo && !baloes.length) await presenca(alvo.sessao, alvo.chatId, 'parar');
 
@@ -647,7 +672,10 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     console.error('agente IA:', (e as Error).message);
   } finally {
     processando.delete(leadId);
-    if (repetir.delete(leadId)) agendar(io, leadId, 1500);
+    if (refazer) {
+      repetir.delete(leadId);
+      setTimeout(() => void rodarTurno(io, leadId, 'mensagem', refeitas + 1), 1200);
+    } else if (repetir.delete(leadId)) agendar(io, leadId, 1500);
   }
 }
 

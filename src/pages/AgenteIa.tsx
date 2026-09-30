@@ -28,6 +28,7 @@ const PADRAO = (perguntas: Pergunta[]): Config => ({
 
 const DECISOES: Record<string, string> = {
   continuar: 'Continuou a conversa',
+  refeito: 'Refez a resposta (o cliente mandou mais mensagem enquanto ela digitava)',
   'passar:completo': 'Passou pra roleta — qualificação completa',
   'passar:pediu_humano': 'Passou pra roleta — cliente pediu uma pessoa',
   'passar:sem_interesse': 'Passou pra roleta — cliente sem interesse',
