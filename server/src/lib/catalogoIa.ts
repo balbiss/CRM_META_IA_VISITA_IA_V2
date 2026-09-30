@@ -18,6 +18,8 @@ const norm = (s: string) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').t
 /** Maior valor em reais citado ("até 120k", "400 mil", "1,5 milhão", "R$ 350.000"). */
 export function valorMaximo(txt?: string): number | null {
   if (!txt) return null;
+  // "acima de 400k", "a partir de", "mais de", "400k à vista e o resto financiado": é piso, não teto
+  if (/acima|a partir|mais de|pelo menos|no minimo|minimo de|resto financ|restante financ/.test(norm(txt))) return null;
   let max: number | null = null;
   // "mil" antes de "mi" na alternância: senão "400 mil" casava "mi" e virava 400 milhões
   for (const m of norm(txt).matchAll(/(\d+(?:[.,]\d+)*)\s*(milhoes|milhao|mil|mi|k)?/g)) {

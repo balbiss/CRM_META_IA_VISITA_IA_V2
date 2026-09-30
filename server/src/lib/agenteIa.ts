@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
 import {
@@ -433,10 +433,12 @@ async function registrarTurno(lead: Lead, dados: {
   }).catch(e => console.error('ia turno log:', (e as Error).message));
 }
 
-async function chegouMensagemNova(leadId: string, depoisDe: Date) {
+// Conta mensagens do cliente (e não compara horário: o Postgres guarda microssegundos e o Date do
+// JS só milissegundos — a última mensagem lida parecia "nova" e toda resposta era refeita 2x).
+async function mensagensDoCliente(leadId: string) {
   const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(mensagensWhatsapp)
-    .where(and(eq(mensagensWhatsapp.leadId, leadId), eq(mensagensWhatsapp.direcao, 'in'), gt(mensagensWhatsapp.enviadoEm, depoisDe)));
-  return (r?.n ?? 0) > 0;
+    .where(and(eq(mensagensWhatsapp.leadId, leadId), eq(mensagensWhatsapp.direcao, 'in')));
+  return r?.n ?? 0;
 }
 
 async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' | 'primeiro_contato', refeitas = 0) {
@@ -453,11 +455,12 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const { cfg } = conf;
     const perguntas = perguntasDe(cfg);
 
-    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo, transcricao: mensagensWhatsapp.transcricao, enviadoEm: mensagensWhatsapp.enviadoEm })
+    // Quantas mensagens do cliente a IA "leu" (contadas ANTES de ler o histórico): se aumentar até a
+    // hora de enviar, a resposta ficou velha.
+    const lidasDoCliente = await mensagensDoCliente(leadId);
+    const msgs = (await db.select({ direcao: mensagensWhatsapp.direcao, texto: mensagensWhatsapp.texto, anexoTipo: mensagensWhatsapp.anexoTipo, transcricao: mensagensWhatsapp.transcricao })
       .from(mensagensWhatsapp).where(eq(mensagensWhatsapp.leadId, leadId))
       .orderBy(desc(mensagensWhatsapp.enviadoEm)).limit(20)).reverse();
-    // Até onde a IA "leu": se chegar mensagem do cliente depois disso, a resposta fica velha.
-    const vistoAte = msgs.length ? msgs[msgs.length - 1].enviadoEm : inicio;
     const historico = msgs.map(m => ({
       papel: m.direcao === 'in' ? 'cliente' : 'atendente',
       texto: [m.texto, m.transcricao ? '[áudio]: ' + m.transcricao : null].filter(Boolean).join('\n')
@@ -587,8 +590,23 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       : (r.resposta || '').trim();
     let erroEnvio: string | null = null;
     const baloes = resposta ? baloesDe(resposta) : [];
+
+    // Catálogo: a IA escolheu um dos imóveis que o CRM passou (código IM1..IM3); o CRM manda as fotos
+    // e anota o imóvel de interesse no lead pro corretor.
+    // Trava: a IA às vezes OFERECE as fotos ("quer ver?") e já marca pra enviar. Foto só sai se o
+    // cliente pediu, ou disse que sim depois de a IA ter oferecido.
+    const ultimaDaIa = [...historico].reverse().find(m => m.papel === 'atendente')?.texto || '';
+    const clientePediuFoto = /foto|imagem|image|v[eê]r|mostr|manda|envi/i.test(entrada || '')
+      || (/foto/i.test(ultimaDaIa) && /\b(sim|quero|pode|claro|manda|bora|opa|ok|beleza|gostei|show)\b/i.test(entrada || ''));
+    const imFotos = r.enviarFotos && clientePediuFoto && !decisao.startsWith('descartar')
+      ? sugeridos.find(s => s.codigo === r.enviarFotos) : undefined;
+    const imInteresse = imFotos ?? (r.imovelInteresse ? sugeridos.find(s => s.codigo === r.imovelInteresse) : undefined);
+    // Com fotos, a ordem é: 1º balão ("te mando as fotos 👇") → fotos → ficha → o resto (a próxima pergunta).
+    const baloesAntes = imFotos ? baloes.slice(0, 1) : baloes;
+    const baloesDepois = imFotos ? baloes.slice(1) : [];
+
     try {
-      for (let i = 0; i < baloes.length; i++) {
+      for (let i = 0; i < baloesAntes.length; i++) {
         if (alvo) {
           if (i > 0) await presenca(alvo.sessao, alvo.chatId, 'digitando');
           // no 1º balão desconta o tempo que a IA já passou pensando (o "digitando…" já estava na tela)
@@ -598,12 +616,12 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
         }
         // O cliente mandou mais coisa enquanto a IA pensava/digitava: como uma pessoa faria, joga
         // fora a resposta e refaz considerando tudo (no máx. 2x, pra quem não para de digitar).
-        if (i === 0 && evento === 'mensagem' && refeitas < 2 && await chegouMensagemNova(leadId, vistoAte)) {
+        if (i === 0 && evento === 'mensagem' && refeitas < 2 && (await mensagensDoCliente(leadId)) > lidasDoCliente) {
           refazer = true;
           break;
         }
         await enviarPelaIa(io, lead, baloes[i], alvo?.chatId);
-        if (i < baloes.length - 1) await dormir(700);
+        if (i < baloesAntes.length - 1) await dormir(700);
       }
     } catch (e) {
       erroEnvio = (e as Error).message;
@@ -616,18 +634,8 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     }
     if (alvo && !baloes.length) await presenca(alvo.sessao, alvo.chatId, 'parar');
 
-    // Catálogo: a IA escolheu um dos imóveis que o CRM passou (código IM1..IM3); o CRM manda as fotos
-    // e anota o imóvel de interesse no lead pro corretor.
-    // Trava: a IA às vezes OFERECE as fotos ("quer ver?") e já marca pra enviar. Foto só sai se o
-    // cliente pediu, ou disse que sim depois de a IA ter oferecido.
-    const ultimaDaIa = [...historico].reverse().find(m => m.papel === 'atendente')?.texto || '';
-    const clientePediuFoto = /foto|imagem|image|v[eê]r|mostr|manda|envi/i.test(entrada || '')
-      || (/foto/i.test(ultimaDaIa) && /\b(sim|quero|pode|claro|manda|bora|opa|ok|beleza|gostei|show)\b/i.test(entrada || ''));
-    const imFotos = r.enviarFotos && clientePediuFoto ? sugeridos.find(s => s.codigo === r.enviarFotos) : undefined;
-    const imInteresse = imFotos ?? (r.imovelInteresse ? sugeridos.find(s => s.codigo === r.imovelInteresse) : undefined);
     let fotosEnviadas = 0;
-    if (imFotos && !erroEnvio && !decisao.startsWith('descartar')) {
-      // Ordem fixa: (texto da IA já saiu) → fotos numeradas → ficha do imóvel fechando o envio.
+    if (imFotos && !erroEnvio) {
       const fotos = imFotos.imagens.slice(0, Math.max(1, cfg.fotosPorImovel));
       for (let i = 0; i < fotos.length; i++) {
         await dormir(i === 0 ? 1200 : 900);
@@ -639,6 +647,15 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
         await dormir(1500);
         await enviarPelaIa(io, lead, fichaImovel(imFotos), alvo?.chatId).catch(e => console.error('agente IA ficha:', (e as Error).message));
       }
+    }
+    // Resto da resposta (normalmente a próxima pergunta) só depois das fotos e da ficha.
+    for (const b of (imFotos && !erroEnvio ? baloesDepois : [])) {
+      if (alvo) {
+        await presenca(alvo.sessao, alvo.chatId, 'digitando');
+        await dormir(tempoDigitacao(b));
+        await presenca(alvo.sessao, alvo.chatId, 'parar');
+      }
+      await enviarPelaIa(io, lead, b, alvo?.chatId).catch(e => console.error('agente IA balão:', (e as Error).message));
     }
     if (imInteresse && lead.imovelInteresseId !== imInteresse.id) {
       const [atualizado] = await db.update(leads).set({ imovelInteresseId: imInteresse.id, imovelTitulo: imInteresse.titulo, imovelSub: imInteresse.local || null })
