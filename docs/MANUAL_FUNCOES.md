@@ -214,12 +214,19 @@ lead sem corretor**. Cliente antigo que volta a falar vai direto pro corretor de
   (ex.: "Investidor: quando disser que é pra investir"). A IA só usa as desta lista.
 - **Desqualificação**: casos em que o lead não tem perfil (ex.: "Renda familiar abaixo de R$ 2.500").
   Pra cada caso, escolha:
-  - **Descartar**: o lead **não vai pra roleta**, vai pro **Bolsão (Rebatidas)** com o motivo. A IA
-    se despede com educação, sem dizer o motivo. Se a IA errou, qualquer corretor pode puxar o lead.
+  - **Descartar**: o lead **não vai pra roleta**, vai pro **Bolsão (Rebatidas)** com o motivo (e a
+    etiqueta, se você escolher uma). Se a IA errou, qualquer corretor pode puxar o lead.
   - **Só etiquetar e seguir**: coloca a etiqueta escolhida e o lead segue normal pra roleta.
+  - **Antes de descartar, tentar** (opcional): uma tentativa de não perder o cliente. Ex.: no
+    critério de renda, "perguntar se consegue compor renda com outra pessoa (cônjuge, familiar) ou
+    usar FGTS". A IA faz essa pergunta **uma vez**; se o cliente topar, a conversa segue normal (e
+    ela soma as rendas); só se ele confirmar que não tem jeito é que ela descarta.
+  - **O que responder pra quem for descartado**: a IA explica com educação que, no momento, não tem
+    uma opção que se encaixe (padrão), **ou** um texto fixo seu, sem citar motivo nenhum. O cliente
+    nunca fica sem resposta.
 - **Mensagem ao passar pro corretor**, **máximo de respostas da IA** e **tempos de espera**.
 - **Jeito humano**:
-  - **Espera antes de responder** (padrão 15 segundos): pra quem manda a mensagem em pedaços
+  - **Espera antes de responder** (padrão 8 segundos): pra quem manda a mensagem em pedaços
     ("oi" · "tudo bem?" · "vi o anúncio"), cada mensagem nova reinicia a contagem, e a IA responde
     tudo de uma vez quando o cliente para de digitar.
   - **Lida + "digitando…"**: depois da espera, a mensagem do cliente fica com o visto azul, aparece
