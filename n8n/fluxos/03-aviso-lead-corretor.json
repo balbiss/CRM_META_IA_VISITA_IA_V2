@@ -1,5 +1,5 @@
 {
-  "name": "CRM VISITA IA — AVISO DE LEAD AO CORRETOR",
+  "name": "CRM VISITA IA V2 — AVISO DE LEAD AO CORRETOR",
   "nodes": [
     {
       "id": "nota-e08p5sqm",
@@ -28,7 +28,7 @@
       ],
       "parameters": {
         "httpMethod": "POST",
-        "path": "visitaia-aviso-corretor",
+        "path": "visitaia-v2-aviso-corretor",
         "options": {
           "onlyRunIf": "={{ $json.query.secret === \"__SEGREDO_AVISO_CORRETOR__\" }}"
         }

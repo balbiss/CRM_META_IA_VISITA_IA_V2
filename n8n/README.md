@@ -107,7 +107,7 @@ importação já ligar sozinha. Se o nome for outro, é só escolher a credencia
 |---|---|
 | 01 | `https://SEU-N8N/webhook/visitaia-v2-agente-ia` |
 | 02 | `https://SEU-N8N/webhook/visitaia-v2-transcrever-audio` |
-| 03 | `https://SEU-N8N/webhook/visitaia-aviso-corretor` |
+| 03 | `https://SEU-N8N/webhook/visitaia-v2-aviso-corretor` |
 
 ---
 
@@ -252,8 +252,9 @@ tela de Integrações do CRM.
 - **Captação Facebook:** a marca-d'água (último lead lido) fica no *static data* do workflow. Se
   apagar e reimportar o workflow, na primeira rodada ele busca só os últimos 10 min.
 - **Uma instância n8n por ambiente.** Os fluxos 03 e 04 apontam pra UM backend (`__URL_API_CRM__`).
-  Pra ter produção e v2 no mesmo n8n, importe duas cópias com nomes/paths diferentes (ex.: path
-  `visitaia-aviso-corretor-v2`) e ajuste a env do backend correspondente.
+  Pra ter produção e v2 no mesmo n8n, importe duas cópias com nomes/paths diferentes e ajuste a env
+  do backend correspondente. É o que está feito hoje: a v1 usa o path `visitaia-aviso-corretor` e a
+  v2 usa `visitaia-v2-aviso-corretor` (fluxo próprio, segredos próprios). Mudança num não afeta o outro.
 
 ---
 
