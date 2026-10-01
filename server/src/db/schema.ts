@@ -192,6 +192,11 @@ export const leads = pgTable('leads', {
   iaUltimaAtividadeEm: timestamp('ia_ultima_atividade_em', { withTimezone: true }),
   // Mensagem do cliente ainda sem resposta da IA (garante o turno mesmo se o servidor reiniciar).
   iaAguardandoDesde: timestamp('ia_aguardando_desde', { withTimezone: true }),
+  // --- Importação por planilha ---
+  // Lote de onde o lead veio. Enquanto `importacaoPendente`, o lead fica guardado: fora do
+  // Kanban, da roleta automática e do "distribuir pendentes" — só o dono/gerente distribui.
+  loteImportacaoId: uuid('lote_importacao_id').references(() => lotesImportacao.id, { onDelete: 'set null' }),
+  importacaoPendente: boolean('importacao_pendente').notNull().default(false),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   // Postgres não indexa FK automaticamente — sem isso, toda listagem de leads (a query mais
@@ -611,6 +616,23 @@ export const notificacoes = pgTable('notificacoes', {
   lida: boolean('lida').notNull().default(false),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Lote de leads importados de uma planilha (Excel/CSV). Os leads ficam guardados até o
+ *  dono/gerente distribuir pelo lote — nada sai pra roleta, IA ou follow-up sozinho. */
+export const lotesImportacao = pgTable('lotes_importacao', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  nome: text('nome').notNull(),
+  criadoPorNome: text('criado_por_nome'),
+  // etiqueta aplicada em todos os leads do lote ("Planilha: <nome>")
+  tagId: uuid('tag_id').references(() => tags.id, { onDelete: 'set null' }),
+  novos: integer('novos').notNull().default(0),
+  duplicados: integer('duplicados').notNull().default(0),
+  invalidos: integer('invalidos').notNull().default(0),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  imobIdx: index('lotes_importacao_imobiliaria_id_idx').on(table.imobiliariaId),
+}));
 
 export const distribuicaoLog = pgTable('distribuicao_log', {
   id: uuid('id').primaryKey().defaultRandom(),

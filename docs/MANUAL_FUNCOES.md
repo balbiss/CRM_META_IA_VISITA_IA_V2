@@ -408,6 +408,60 @@ Com mais de um número:
 
 ---
 
+## 8. Importar leads de planilha
+
+**Pra quem:** Dono e Gerente. **Onde:** menu **Importar planilha**.
+
+Serve para trazer para o CRM uma lista de contatos que a imobiliária já tem (feirão, planilha
+antiga, lista de outro sistema).
+
+### Passo a passo
+
+1. **Baixar planilha modelo** (opcional): um arquivo pronto que abre no Excel, com as colunas
+   Nome, Telefone, E-mail e Observação. Também dá para usar a planilha que a imobiliária já tem.
+2. **+ Importar planilha** → escolha o arquivo (Excel .xlsx ou CSV). A primeira linha precisa ter
+   os nomes das colunas.
+3. **Confira as colunas.** O CRM reconhece sozinho nomes comuns ("Cliente", "Celular",
+   "WhatsApp", "Email", "Obs"…). Se errar, troque na lista. Só o telefone é obrigatório.
+4. Dê um **nome para o lote** (ex.: "Feirão setembro"). Ele vira etiqueta em todos os leads.
+5. **Conferir antes de importar:** mostra quantos são novos, quantos já estão no CRM e quantos têm
+   erro (telefone inválido). Nada é gravado nessa etapa.
+6. **Importar.** Os leads ficam **guardados no lote**.
+
+### Guardados no lote: por que
+
+Lead importado **não aparece no funil, não entra na roleta, não recebe mensagem da IA nem
+follow-up**. Uma lista antiga disparando sozinha é o jeito mais rápido de o WhatsApp bloquear o
+número da imobiliária. Quem decide quando e para quem distribuir é o dono ou gerente.
+
+- **Telefone repetido não duplica.** Se a pessoa já é lead, continua com o corretor dela. O CRM só
+  completa o e-mail, se faltava.
+- **Se um lead guardado mandar mensagem no WhatsApp da imobiliária**, ele está ativo: sai da espera
+  sozinho e vai para a roleta, como qualquer lead novo.
+
+### Distribuir
+
+No lote, clique em **Distribuir** e escolha:
+
+- **Dividir entre corretores:** marque quem participa. O CRM reparte em sequência, um para cada
+  (230 leads para 3 corretores = 77, 77 e 76).
+- **Tudo para um corretor:** o lote inteiro vai para uma pessoa.
+- **Escolher na mão:** marque os leads da lista e o corretor.
+
+Dá para distribuir **aos poucos**: em "Quantos distribuir agora?", coloque por exemplo 30. O resto
+continua guardado para outro dia.
+
+Quando recebe, o corretor ganha **um aviso só**, com o total ("30 leads da planilha Feirão foram
+pra sua carteira"), no CRM e, se a imobiliária usa o Aviso por WhatsApp, no celular. Os leads entram
+no "Lead Novo" dele com a etiqueta "Planilha: …". **Nenhuma mensagem vai para os clientes.**
+
+### Desfazer
+
+**Desfazer** apaga os leads **ainda guardados** do lote. Os que já foram distribuídos continuam com
+os corretores. Se nada tinha sido distribuído, o lote e a etiqueta somem por completo.
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
 
 - **Agente de IA com personalidade diferente por número**: hoje a configuração da IA (prompt,

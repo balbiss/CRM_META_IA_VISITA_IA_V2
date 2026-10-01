@@ -17,9 +17,10 @@ export function leadsRouter(io: SocketServer) {
   // Corretor only ever sees their own leads; dono/gerente see everyone's in the imobiliária.
   router.get('/', async (req, res) => {
     const { imobiliariaId, role, sub } = req.auth!;
+    // lead guardado de planilha (importacaoPendente) não aparece: fica na tela de Importações
     const scoped = role === 'corretor'
-      ? and(eq(leads.imobiliariaId, imobiliariaId), eq(leads.corretorId, sub))
-      : eq(leads.imobiliariaId, imobiliariaId);
+      ? and(eq(leads.imobiliariaId, imobiliariaId), eq(leads.corretorId, sub), eq(leads.importacaoPendente, false))
+      : and(eq(leads.imobiliariaId, imobiliariaId), eq(leads.importacaoPendente, false));
     const rows = await db.select().from(leads).where(scoped);
     // etiquetas de cada lead (mesmo escopo — join por lead_id)
     const vinculos = await db.select({ leadId: leadTags.leadId, tagId: leadTags.tagId })

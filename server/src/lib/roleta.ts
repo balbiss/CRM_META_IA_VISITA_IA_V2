@@ -158,11 +158,12 @@ async function atribuirPelaFilaFixa(roleta: Roleta, leadId: string): Promise<{ c
 export async function distribuirLead(io: SocketServer, imobiliariaId: string, leadId: string): Promise<string | null> {
   const [dados] = await db.select({
     canal: leads.canal, finalidade: leads.finalidade, sessaoWhatsappId: leads.sessaoWhatsappId, corretorId: leads.corretorId,
-    iaStatus: leads.iaStatus,
+    iaStatus: leads.iaStatus, importacaoPendente: leads.importacaoPendente,
   }).from(leads).where(eq(leads.id, leadId)).limit(1);
   // Lead nas mãos do Agente de IA não entra na roleta (nem pelo "distribuir pendentes" do plantão):
   // quem manda pra roleta, quando terminar, é o próprio agente (lib/agenteIa.ts).
-  if (!dados || dados.corretorId || dados.iaStatus === 'atendendo') return null;
+  // Lead de planilha ainda guardado também não: quem distribui é o dono/gerente pelo lote.
+  if (!dados || dados.corretorId || dados.iaStatus === 'atendendo' || dados.importacaoPendente) return null;
 
   const roleta = await escolherRoleta(imobiliariaId, dados);
   if (!roleta) return null;
@@ -236,7 +237,7 @@ export async function distribuirPendentes(io: SocketServer, imobiliariaId: strin
   if (!colNovo) return 0;
 
   const pendentes = await db.select({ id: leads.id }).from(leads)
-    .where(and(eq(leads.imobiliariaId, imobiliariaId), eq(leads.colunaId, colNovo.id), isNull(leads.corretorId)))
+    .where(and(eq(leads.imobiliariaId, imobiliariaId), eq(leads.colunaId, colNovo.id), isNull(leads.corretorId), eq(leads.importacaoPendente, false)))
     .orderBy(asc(leads.criadoEm));
 
   let n = 0;

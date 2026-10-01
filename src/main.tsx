@@ -28,6 +28,7 @@ import Manual from './pages/Manual';
 import Integracoes from './pages/Integracoes';
 import AvisosCorretor from './pages/AvisosCorretor';
 import AgenteIa from './pages/AgenteIa';
+import Importacoes from './pages/Importacoes';
 import SiteImoveis from './pages/SiteImoveis';
 import Templates from './pages/Templates';
 import LinksUteis from './pages/LinksUteis';
@@ -69,6 +70,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="integracoes" element={<Integracoes />} />
           <Route path="avisos-corretor" element={<AvisosCorretor />} />
           <Route path="agente-ia" element={<AgenteIa />} />
+          <Route path="importacoes" element={<Importacoes />} />
           <Route path="site" element={<SiteImoveis />} />
           <Route path="links-uteis" element={<LinksUteis />} />
           <Route path="treinamentos" element={<Treinamentos />} />

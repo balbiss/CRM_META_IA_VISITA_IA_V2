@@ -178,6 +178,14 @@ export function whatsappRouter(io: SocketServer) {
           else void distribuirLead(io, sessao.imobiliariaId, novo.id).catch(e => console.error('roleta wa:', (e as Error).message));
         }
       }
+      // Lead guardado de planilha que mandou mensagem: está ativo — sai da espera e vai pra roleta.
+      if (lead && lead.importacaoPendente && !fromMe) {
+        const [liberado] = await db.update(leads).set({ importacaoPendente: false }).where(eq(leads.id, lead.id)).returning();
+        lead = liberado;
+        registrarEvento(sessao.imobiliariaId, lead.id, 'importacao', 'Lead da planilha mandou mensagem — saiu da espera e foi pra roleta', 'Sistema');
+        io.to('imobiliaria:' + sessao.imobiliariaId).emit('lead:created', lead);
+        if (!lead.corretorId) void distribuirLead(io, sessao.imobiliariaId, lead.id).catch(e => console.error('roleta planilha:', (e as Error).message));
+      }
       if (!lead) return;
 
       // Eco de mensagem que a própria IA mandou: ela já gravou a dela, e não é "humano respondendo".
