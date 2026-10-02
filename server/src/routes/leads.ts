@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { leads, leadTags, mensagensWhatsapp, filasAtendimento, colunasKanban, eventosLead, perfis, tarefas, distribuicaoLog, imobiliarias, notificacoes, imoveis } from '../db/schema.js';
+import { leads, leadTags, mensagensWhatsapp, filasAtendimento, colunasKanban, eventosLead, perfis, tarefas, distribuicaoLog, recusasLead, imobiliarias, notificacoes, imoveis } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { distribuirLead } from '../lib/roleta.js';
 import { registrarEvento } from '../lib/eventos.js';
@@ -167,6 +167,8 @@ export function leadsRouter(io: SocketServer) {
   // Corretor recusa um lead que caiu pra ele — volta pra roleta (ele vai pro fim da fila).
   router.post('/:id/recusar', async (req, res) => {
     const { imobiliariaId, sub, nome } = req.auth!;
+    // porTempo = o corretor não respondeu o popup a tempo (o front recusa sozinho)
+    const porTempo = req.body?.porTempo === true;
     const [lead] = await db.select().from(leads)
       .where(and(eq(leads.id, req.params.id), eq(leads.imobiliariaId, imobiliariaId), eq(leads.corretorId, sub))).limit(1);
     if (!lead) return res.status(404).json({ error: 'Lead não encontrado ou não é seu' });
@@ -175,10 +177,14 @@ export function leadsRouter(io: SocketServer) {
     // quem recusou vai pro fim: marca ultimaAtribuicao como agora
     await db.update(filasAtendimento).set({ ultimaAtribuicao: new Date() }).where(eq(filasAtendimento.corretorId, sub));
     io.to('imobiliaria:' + imobiliariaId).emit('lead:updated', { ...lead, corretorId: null });
-    registrarEvento(imobiliariaId, lead.id, 'recusa', 'Lead recusado por ' + nome + ' — devolvido à roleta', nome);
+    registrarEvento(imobiliariaId, lead.id, 'recusa', porTempo
+      ? nome + ' não respondeu ao lead a tempo — devolvido à roleta'
+      : 'Lead recusado por ' + nome + ' — devolvido à roleta', nome);
+    const [recusa] = await db.insert(recusasLead).values({ imobiliariaId, leadId: lead.id, corretorId: sub, motivo: porTempo ? 'sem_resposta' : 'recusou' }).returning();
     await encerrarPorLead(io, imobiliariaId, lead.id, 'lead recusado');
 
     const novoCorretor = await distribuirLead(io, imobiliariaId, lead.id);
+    if (novoCorretor) await db.update(recusasLead).set({ redistribuidoParaId: novoCorretor }).where(eq(recusasLead.id, recusa.id));
     res.json({ ok: true, redistribuido: !!novoCorretor });
   });
 

@@ -462,6 +462,62 @@ os corretores. Se nada tinha sido distribuído, o lote e a etiqueta somem por co
 
 ---
 
+## 9. Recusas da roleta (histórico)
+
+**Pra quem:** Dono e Gerente veem tudo; o corretor vê só as dele.
+
+Quando um lead cai para o corretor, aparece no CRM o aviso **Aceitar / Recusar** com 45 segundos.
+Se ele clicar em **Recusar** ou **deixar o tempo acabar**, o lead volta para a roleta e vai para o
+próximo. Agora isso fica registrado:
+
+- **Rebatidas → Histórico da Roleta:** as recusas aparecem junto com as entregas, com a etiqueta
+  **"Recusou"** ou **"Não respondeu a tempo"** e para quem o lead foi depois. O botão **"Só recusas"**
+  filtra.
+- **Dentro do lead**, na linha do tempo, aparece se o corretor recusou ou se não respondeu a tempo.
+- **Relatórios** mostra as recusas por corretor e o **aceite** de cada um (seção 10).
+
+> Esse aviso de Aceitar/Recusar só existe quando o **Aviso por WhatsApp** (seção 2) está
+> desligado. Com ele ligado, a entrega é definitiva e não há recusa.
+
+---
+
+## 10. Relatórios
+
+**Pra quem:** Dono e Gerente veem a imobiliária inteira; o corretor vê só os próprios números.
+**Onde:** menu **Relatórios**.
+
+No topo, escolha o período: **Hoje, 7 dias, 30 dias, Este mês, Mês passado** ou **Escolher datas**.
+Tudo na tela muda junto.
+
+**Números principais** (com comparação com o período anterior, do mesmo tamanho):
+
+- **Leads recebidos** e **Vendas**, com a **variação** em relação ao período anterior.
+- **Conversão:** vendas ÷ leads do período.
+- **VGV vendido** e o **ticket médio**.
+- **1ª resposta do corretor:** tempo típico entre o lead cair para ele e a primeira mensagem dele
+  pelo CRM, e quantos foram respondidos em até 5 minutos. Se a imobiliária usa o Aviso por WhatsApp,
+  o corretor responde pelo próprio celular e esse tempo não dá para medir.
+- **Aceite da roleta:** quantos leads ficaram com quem recebeu, e quantas recusas/sem resposta houve.
+- **Descartados** no período.
+
+**Gráficos e tabelas:**
+
+- **Leads por dia** (passe o mouse ou toque na barra para ver o número).
+- **De onde vêm os leads:** por origem (Facebook, WhatsApp, Site…), com vendas e conversão.
+- **Horário de chegada:** em que hora os leads mais chegam — ajuda a escalar o plantão.
+- **Campanhas:** as 10 que mais trouxeram leads, com vendas e conversão.
+- **Funil agora:** quantos leads estão em cada etapa hoje.
+- **Corretores:** recebidos, recusou, não respondeu, aceite, tempo de 1ª resposta, leads na carteira,
+  vendas e VGV de cada um.
+- **Recusas da roleta:** a lista do período (quem, qual lead, e para quem foi depois).
+- **Motivos de descarte:** os motivos mais comuns.
+- **Agente de IA** (se a imobiliária usa): conversas atendidas, passadas à roleta, desqualificadas
+  e em atendimento agora.
+
+**Exportar CSV** baixa um arquivo que abre no Excel com todos esses números do período.
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
 
 - **Agente de IA com personalidade diferente por número**: hoje a configuração da IA (prompt,

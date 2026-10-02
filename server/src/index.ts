@@ -34,6 +34,7 @@ import { bootstrapAdminPlataforma, varrerInadimplencia } from './lib/bootstrapPl
 import { varrerTarefasVencidas } from './lib/tarefas.js';
 import { varrerFollowups } from './lib/followup.js';
 import { varrerIa } from './lib/agenteIa.js';
+import { relatoriosRouter } from './routes/relatorios.js';
 import { importacoesRouter } from './routes/importacoes.js';
 import { agenteIaRouter } from './routes/agenteIa.js';
 
@@ -94,6 +95,7 @@ app.use('/api/avisos-corretor', avisosCorretorRouter());
 app.use('/api/contatos-whatsapp', contatosWhatsappRouter(io));
 app.use('/api/agente-ia', agenteIaRouter(io));
 app.use('/api/importacoes', importacoesRouter(io));
+app.use('/api/relatorios', relatoriosRouter());
 
 const port = Number(process.env.PORT) || 3001;
 

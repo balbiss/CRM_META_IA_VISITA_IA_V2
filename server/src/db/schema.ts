@@ -617,6 +617,22 @@ export const notificacoes = pgTable('notificacoes', {
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Cada vez que um corretor recusa um lead no popup do CRM (ou deixa o tempo acabar).
+ *  Alimenta o Histórico da Roleta e as métricas de aceite em Relatórios. */
+export const recusasLead = pgTable('recusas_lead', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  corretorId: uuid('corretor_id').notNull().references(() => perfis.id, { onDelete: 'cascade' }),
+  // 'recusou' = clicou em Recusar; 'sem_resposta' = o tempo do popup acabou
+  motivo: text('motivo').notNull(),
+  // pra quem a roleta mandou depois (null = ninguém disponível, ficou sem corretor)
+  redistribuidoParaId: uuid('redistribuido_para_id').references(() => perfis.id, { onDelete: 'set null' }),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  imobIdx: index('recusas_lead_imobiliaria_id_idx').on(table.imobiliariaId),
+}));
+
 /** Lote de leads importados de uma planilha (Excel/CSV). Os leads ficam guardados até o
  *  dono/gerente distribuir pelo lote — nada sai pra roleta, IA ou follow-up sozinho. */
 export const lotesImportacao = pgTable('lotes_importacao', {

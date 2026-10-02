@@ -281,6 +281,13 @@
       "when": 1790865672562,
       "tag": "0039_magenta_thaddeus_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790952692833,
+      "tag": "0040_curved_the_phantom",
+      "breakpoints": true
     }
   ]
 }

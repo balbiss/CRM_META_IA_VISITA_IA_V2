@@ -282,7 +282,7 @@ interface AppState {
   bolsaoDiscard: (id: string, nome: string) => void;
   shuffle: () => void;
   distribuirPendentes: () => Promise<void>;
-  roletaLog: Array<{ criadoEm: string; origem: string; roletaNome?: string | null; leadNome: string; corretorNome: string }>;
+  roletaLog: Array<{ tipo?: 'entrega' | 'recusa'; criadoEm: string; origem: string; roletaNome?: string | null; leadNome: string; corretorNome: string; paraNome?: string | null }>;
   fetchRoletaLog: () => Promise<void>;
   roletas: RemoteRoleta[];
   fetchRoletas: () => Promise<void>;
@@ -1663,7 +1663,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().leadsPendentes.length > 0) get().fireAlert('lead'); else get().closeAlert();
     if (!lp || !token) return;
     try {
-      await apiFetch('/api/leads/' + lp.id + '/recusar', token, { method: 'POST' });
+      await apiFetch('/api/leads/' + lp.id + '/recusar', token, { method: 'POST', body: JSON.stringify({ porTempo }) });
       get().toast(porTempo ? 'Tempo esgotado — ' + lp.nome + ' voltou pra roleta' : lp.nome + ' recusado — voltou pra roleta');
     } catch { /* já pode ter sido reatribuído */ }
   },
