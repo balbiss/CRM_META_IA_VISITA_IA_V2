@@ -504,8 +504,14 @@ export async function despacharPeloWhatsapp(opts: {
   if (!sessao) return { enviado: false, erro: 'nenhuma sessão conectada' };
 
   try {
-    if (opts.anexoUrl && opts.anexoTipo) await enviarMidia(sessao.sessionName, opts.telefone, opts.anexoUrl, opts.anexoTipo, opts.texto ?? undefined, opts.anexoNome ?? undefined);
-    else if (opts.texto) await enviarTexto(sessao.sessionName, opts.telefone, opts.texto);
+    // Endereço que o próprio WhatsApp reconhece (pode vir @lid). Montar "telefone@c.us" na mão falha
+    // com número que está no WhatsApp sem o 9º dígito (comum no Norte/Nordeste) — o follow-up ficava
+    // adiando de 15 em 15 min pra sempre.
+    const { resolverChatId } = await import('../lib/waha.js');
+    const destino = await resolverChatId(sessao.sessionName, opts.telefone);
+    if (destino.existe === false) return { enviado: false, erro: 'NUMERO_INEXISTENTE' };
+    if (opts.anexoUrl && opts.anexoTipo) await enviarMidia(sessao.sessionName, destino.chatId, opts.anexoUrl, opts.anexoTipo, opts.texto ?? undefined, opts.anexoNome ?? undefined);
+    else if (opts.texto) await enviarTexto(sessao.sessionName, destino.chatId, opts.texto);
     return { enviado: true };
   } catch (e) {
     return { enviado: false, erro: (e as Error).message };

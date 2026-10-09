@@ -96,7 +96,8 @@ export async function qrSessao(sessionName: string): Promise<string | null> {
   }
 }
 
-const chatId = (numero: string) => numero.replace(/[^0-9]/g, '') + '@c.us';
+// Aceita telefone ("559198...") ou um chatId já resolvido ("...@lid" / "...@c.us"), que passa direto.
+const chatId = (numero: string) => (numero.includes('@') ? numero : numero.replace(/[^0-9]/g, '') + '@c.us');
 
 /** URL da foto de perfil do contato no WhatsApp (null se não tiver / for privada). */
 export async function fotoPerfil(sessionName: string, numero: string): Promise<string | null> {

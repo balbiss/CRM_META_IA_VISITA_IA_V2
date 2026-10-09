@@ -258,7 +258,15 @@ export async function varrerFollowups(io: SocketServer): Promise<number> {
         texto, anexoUrl: passo.anexoUrl, anexoTipo: anexoTipo as 'imagem' | 'audio' | 'documento' | null, anexoNome: passo.anexoNome,
       });
       if (!r.enviado) {
-        // sem sessão conectada agora — tenta de novo em 15 min, sem avançar
+        if (r.erro === 'NUMERO_INEXISTENTE') {
+          // número sem WhatsApp: não adianta tentar de novo
+          await db.update(followupExecucoes).set({ status: 'encerrada', motivoFim: 'número sem WhatsApp', proximoEnvioEm: null }).where(eq(followupExecucoes.id, ex.id));
+          registrarEvento(ex.imobiliariaId, lead.id, 'followup', 'Follow-up encerrado: o número não tem WhatsApp', fluxo.nome);
+          io.to('imobiliaria:' + ex.imobiliariaId).emit('followup:mudou', { leadId: lead.id });
+          continue;
+        }
+        // sem sessão conectada / falha no envio — tenta de novo em 15 min, sem avançar
+        console.error('followup: não enviou (execução ' + ex.id + ', lead ' + lead.id + '):', r.erro);
         await db.update(followupExecucoes).set({ proximoEnvioEm: new Date(agora.getTime() + 15 * 60000) }).where(eq(followupExecucoes.id, ex.id));
         continue;
       }
