@@ -11,6 +11,9 @@ export type ImovelSugerido = {
   codigo: string; id: string; titulo: string; tipo: string; finalidade: string; local: string;
   preco: number | null; quartos: number; suites: number; vagas: number; area: number | null;
   destaques: string[]; situacao: string; aceitaFinanciamento: boolean; imagens: string[];
+  condominio: number | null; iptu: number | null;
+  /** O cliente disse um bairro e este imóvel NÃO fica nele (só aparece quando não há nenhum no bairro pedido). */
+  foraDoBairroPedido: boolean;
 };
 
 const norm = (s: string) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -71,24 +74,28 @@ export async function imoveisParaIa(
   // Sem saber nem compra/aluguel nem tipo, qualquer sugestão seria chute.
   if (!fin && !tipo && !imovelInteresseId) return [];
 
-  const pontuados = lista.map(im => {
-    if (im.id === imovelInteresseId) return { im, score: 1000 };
+  type Pontuado = { im: typeof lista[number]; score: number; noBairro: boolean };
+  let pontuados = lista.map(im => {
+    const onde = norm([im.endereco, im.cidade, im.titulo].filter(Boolean).join(' '));
+    const noBairro = tokensRegiao.some(t => onde.includes(t));
+    if (im.id === imovelInteresseId) return { im, score: 1000, noBairro: true };
     if (fin && !norm(im.finalidade).includes(fin)) return null;
     if (tipo && tipoCanonico(im.tipo) !== tipo) return null;
     const preco = Number(im.preco) || 0;
     if (max && preco > max * 1.15) return null;
     let score = 0;
     if (max && preco <= max) score += 2;
-    const onde = norm([im.endereco, im.cidade, im.titulo].filter(Boolean).join(' '));
-    if (tokensRegiao.some(t => onde.includes(t))) score += 3;
+    if (noBairro) score += 3;
     if (qts) score += (im.quartos ?? 0) >= qts ? 2 : -2;
     if ((im.imagens ?? []).length) score += 1;
-    return { im, score };
-  }).filter((x): x is { im: typeof lista[number]; score: number } => !!x)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+    return { im, score, noBairro };
+  }).filter((x): x is Pontuado => !!x);
+  // Cliente disse o bairro e há imóvel nele: a IA só recebe os do bairro (não oferece Pedreira a
+  // quem pediu Umarizal). Sem nenhum no bairro, vão os outros, marcados como "fora do bairro pedido".
+  if (tokensRegiao.length && pontuados.some(p => p.noBairro)) pontuados = pontuados.filter(p => p.noBairro);
+  pontuados = pontuados.sort((a, b) => b.score - a.score).slice(0, 3);
 
-  return pontuados.map(({ im }, i) => ({
+  return pontuados.map(({ im, noBairro }, i) => ({
     codigo: 'IM' + (i + 1),
     id: im.id,
     titulo: im.titulo,
@@ -104,5 +111,8 @@ export async function imoveisParaIa(
     situacao: im.situacao + (im.previsaoEntrega ? ' (entrega ' + im.previsaoEntrega + ')' : ''),
     aceitaFinanciamento: im.aceitaFinanciamento,
     imagens: im.imagens ?? [],
+    condominio: informarPreco && im.valorCondominio ? Number(im.valorCondominio) : null,
+    iptu: informarPreco && im.valorIptu ? Number(im.valorIptu) : null,
+    foraDoBairroPedido: tokensRegiao.length > 0 && !noBairro,
   }));
 }

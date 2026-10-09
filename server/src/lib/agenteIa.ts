@@ -147,6 +147,20 @@ export async function mensagemDoCliente(io: SocketServer, leadId: string) {
 
 /** Marcador em iaDados de que a tentativa de resgate de um critério já foi feita. */
 const TENTOU = '_tentou_';
+// Turno em que as perguntas obrigatórias ficaram completas (marcador interno em iaDados).
+const COMPLETO = '_completo_turno';
+// Cliente dando a conversa por encerrada ("era isso", "obrigado", "depois eu vejo"...).
+const CLIENTE_ENCERROU = /\b(era (s[oó] )?isso|s[oó] isso|obrigad[oa]|valeu|agrade[cç]o|depois (eu )?(vejo|olho|falo)|por enquanto [eé] s[oó]|t[aá] bom assim|tudo certo)\b/i;
+
+/** Pra quem quer ALUGAR, a pergunta padrão de pagamento (financiamento/FGTS/consórcio) não faz
+ *  sentido: vira a garantia do aluguel. Só mexe na pergunta padrão (chave "pagamento"). */
+function perguntasDoCaso(perguntas: PerguntaIa[], dados: Record<string, string>, finalidadeLead: string | null): PerguntaIa[] {
+  const aluguel = /alug|loca/i.test(dados.finalidade || '') || finalidadeLead === 'locacao';
+  if (!aluguel) return perguntas;
+  return perguntas.map(p => p.chave === 'pagamento'
+    ? { ...p, rotulo: 'Garantia do aluguel', pergunta: 'Como pretende dar a garantia do aluguel (fiador, caução ou seguro-fiança)', opcoes: undefined }
+    : p);
+}
 
 const dormir = (ms: number) => new Promise(res => setTimeout(res, ms));
 // ~18 caracteres por segundo, entre 1,8 s e 9 s — parece gente digitando, sem deixar o cliente esperando demais.
@@ -324,6 +338,8 @@ function fichaImovel(im: ImovelSugerido) {
     '🏠 *' + im.titulo + '*',
     im.local ? '📍 ' + im.local : '',
     im.preco ? '💰 R$ ' + im.preco.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + (aluguel ? '/mês' : '') : '💰 Valores: o corretor te passa',
+    [im.condominio ? 'Condomínio R$ ' + im.condominio.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : '',
+      im.iptu ? 'IPTU R$ ' + im.iptu.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : ''].filter(Boolean).join(' · '),
     [im.quartos ? '🛏 ' + im.quartos + ' quarto' + (im.quartos > 1 ? 's' : '') + (im.suites ? ' (' + im.suites + ' suíte' + (im.suites > 1 ? 's' : '') + ')' : '') : '',
       im.vagas ? '🚗 ' + im.vagas + ' vaga' + (im.vagas > 1 ? 's' : '') : '', im.area ? '📐 ' + im.area + ' m²' : ''].filter(Boolean).join(' · '),
     im.destaques.length ? '✨ ' + im.destaques.join(', ') : '',
@@ -516,7 +532,8 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const etiquetasPermitidas = (cfg.etiquetas || []).filter(e => nomesTags.has(e.tagId))
       .map(e => ({ id: e.tagId, nome: nomesTags.get(e.tagId)!, quando: e.quando }));
     const criterios = cfg.criterios || [];
-    const dadosCliente = Object.fromEntries(Object.entries(dadosAtuais).filter(([k]) => !k.startsWith(TENTOU)));
+    // marcadores internos (_tentou_..., _completo_turno) não são dado do cliente
+    const dadosCliente = Object.fromEntries(Object.entries(dadosAtuais).filter(([k]) => !k.startsWith('_')));
     const sugeridos = cfg.consultarImoveis
       ? await imoveisParaIa(lead.imobiliariaId, { ...dadosCliente, _texto: entrada || '' }, lead.imovelInteresseId, cfg.informarPreco)
       : [];
@@ -533,7 +550,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       },
       // imagens ficam no CRM: a IA só decide "mandar fotos do IM2", quem envia é o CRM
       imoveis: sugeridos.map(({ imagens, id: _id, ...resto }) => ({ ...resto, qtdFotos: imagens.length })),
-      perguntas,
+      perguntas: perguntasDoCaso(perguntas, dadosCliente, lead.finalidade),
       etiquetas: etiquetasPermitidas,
       criterios: criterios.map(c => ({
         chave: c.chave, descricao: c.descricao,
@@ -593,6 +610,10 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     if (critTentado) dados[TENTOU + critTentado.chave] = 'sim';
     const turnos = lead.iaTurnos + 1;
     const faltando = perguntas.filter(p => p.obrigatoria && !dados[p.chave]);
+    // Obrigatórias completas: anota em que turno isso aconteceu (pra não deixar a IA conversando sem fim).
+    if (!faltando.length && !dados[COMPLETO]) dados[COMPLETO] = String(turnos);
+    const turnosDesdeCompleto = dados[COMPLETO] ? turnos - Number(dados[COMPLETO]) : -1;
+    const clienteEncerrou = CLIENTE_ENCERROU.test(entrada || '') && !/\?/.test(entrada || '');
 
     // Etiquetas: só as que a imobiliária liberou pra IA; desqualificação: só um critério cadastrado.
     const crit = r.desqualificacao ? criterios.find(c => c.chave === r.desqualificacao) : undefined;
@@ -606,7 +627,13 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     else if (r.semInteresse) decisao = 'passar:sem_interesse';
     // Completo = obrigatórias preenchidas E a IA encerrou (não deixou pergunta no ar pro cliente).
     else if (faltando.length === 0 && r.encerrar) decisao = 'passar:completo';
+    // Rede de segurança: com as obrigatórias completas, a IA não segura o cliente. Encerra se ele
+    // sinalizou que terminou, ou depois de no máximo 2 respostas a mais (fotos, uma desejável...).
+    else if (faltando.length === 0 && (clienteEncerrou || turnosDesdeCompleto >= 2)) decisao = 'passar:completo';
     else if (turnos >= cfg.maxMensagens) decisao = 'passar:limite';
+    // Encerramento forçado pelo CRM com a IA ainda fazendo pergunta: troca a pergunta pela mensagem
+    // de passagem (senão o cliente responde e ninguém da IA lê mais).
+    const encerramentoForcado = decisao === 'passar:completo' && !r.encerrar && /\?/.test(r.resposta || '');
 
     // O texto que o cliente lê é escolhido pela DECISÃO que o CRM executa, nunca solto: a IA já
     // escreveu "vou passar pro corretor" e marcou desqualificação ao mesmo tempo. Descartou →
@@ -628,8 +655,8 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       ? sugeridos.find(s => s.codigo === r.enviarFotos) : undefined;
     const imInteresse = imFotos ?? (r.imovelInteresse ? sugeridos.find(s => s.codigo === r.imovelInteresse) : undefined);
     // Com fotos, a ordem é: 1º balão ("te mando as fotos 👇") → fotos → ficha → o resto (a próxima pergunta).
-    const baloesAntes = imFotos ? baloes.slice(0, 1) : baloes;
-    const baloesDepois = imFotos ? baloes.slice(1) : [];
+    const baloesAntes = encerramentoForcado ? (imFotos ? baloes.slice(0, 1) : []) : imFotos ? baloes.slice(0, 1) : baloes;
+    const baloesDepois = imFotos && !encerramentoForcado ? baloes.slice(1) : [];
 
     try {
       for (let i = 0; i < baloesAntes.length; i++) {
@@ -689,7 +716,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       if (atualizado) io.to('imobiliaria:' + atualizado.imobiliariaId).emit('lead:updated', atualizado);
     }
 
-    if (decisao === 'passar:limite' && cfg.mensagemPassagem && !erroEnvio) {
+    if ((decisao === 'passar:limite' || encerramentoForcado) && cfg.mensagemPassagem && !erroEnvio) {
       await enviarPelaIa(io, lead, cfg.mensagemPassagem, alvo?.chatId).catch(() => {});
     }
     if (alvo) await presenca(alvo.sessao, alvo.chatId, 'offline');
