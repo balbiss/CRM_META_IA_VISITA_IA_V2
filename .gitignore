@@ -26,3 +26,7 @@ dev-dist
 *.njsproj
 *.sln
 *.sw?
+
+# configuração local de teste (nunca versionar)
+.env.*
+!.env.example
