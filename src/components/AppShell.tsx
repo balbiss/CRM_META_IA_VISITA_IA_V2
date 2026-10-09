@@ -11,6 +11,7 @@ import { ImportModal } from './ImportModal';
 import { NewLeadModal } from './NewLeadModal';
 import { AlertTester } from './AlertTester';
 import { Toasts } from './Toasts';
+import { FacebookAlerta } from './FacebookAlerta';
 import { useAppStore } from '../store/appStore';
 import { useRoleInfo } from '../lib/selectors';
 
@@ -50,6 +51,7 @@ export function AppShell() {
         <div className="content-col" style={{ marginLeft: sidebarOpen ? 248 : 68, minWidth: 0, display: 'flex', flexDirection: 'column', transition: 'margin-left .18s ease' }}>
           <div style={{ position: 'sticky', top: 0, zIndex: 30 }}>
             <Topbar />
+            <FacebookAlerta />
           </div>
           <main className="app-main" style={{ flex: 1, padding: '22px 34px 48px', minWidth: 0 }}>
             <Outlet />

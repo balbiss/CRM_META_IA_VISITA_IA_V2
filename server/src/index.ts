@@ -38,6 +38,7 @@ import { relatoriosRouter } from './routes/relatorios.js';
 import { importacoesRouter } from './routes/importacoes.js';
 import { agenteIaRouter } from './routes/agenteIa.js';
 import { facebookWebhookRouter } from './routes/facebookWebhook.js';
+import { verificarConexoesFacebook } from './lib/facebookSaude.js';
 
 const app = express();
 // O webhook do formulário de site é público (token na URL) e a página fica em domínio de
@@ -119,6 +120,11 @@ const varrerMinuto = () => {
 };
 varrerMinuto();
 setInterval(varrerMinuto, 60 * 1000);
+
+// Conexões 'Conectar com Facebook': confere se as páginas continuam mandando leads (a cada 6 h).
+const vigiarFacebook = () => verificarConexoesFacebook().catch(err => console.error('Facebook: verificação falhou —', err.message));
+setTimeout(vigiarFacebook, 60 * 1000);
+setInterval(vigiarFacebook, 6 * 60 * 60 * 1000);
 
 ensureBucket()
   .catch(err => console.error('MinIO: não foi possível preparar o bucket —', err.message))

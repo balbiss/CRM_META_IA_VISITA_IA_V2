@@ -5,7 +5,8 @@ import jwt from 'jsonwebtoken';
  *  A imobiliária faz login, o CRM guarda o token de cada Página e assina o webhook `leadgen`:
  *  todo lead de qualquer formulário da Página chega em tempo real em /api/webhooks/facebook. */
 
-export const GRAPH = 'https://graph.facebook.com/v21.0';
+// FB_GRAPH_URL só existe pra teste local (servidor falso no lugar do Facebook).
+export const GRAPH = (process.env.FB_GRAPH_URL || 'https://graph.facebook.com').replace(/\/$/, '') + '/v21.0';
 const SCOPES = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'leads_retrieval', 'business_management'];
 
 export function fbConfigurado() {

@@ -564,6 +564,53 @@ O botão **+ Conexão manual** continua existindo para quem prefere colar token,
 formulário à mão (o guia passo a passo fica logo abaixo do botão). Nesse modo os leads chegam a cada
 5 minutos, por formulário. Para cliente novo, use sempre o **Conectar com Facebook**.
 
+### Se a conexão cair (aviso automático)
+
+O CRM confere sozinho, **a cada 6 horas**, se cada página conectada pelo login continua mandando
+leads. Se a imobiliária trocar a senha do Facebook, tirar o acesso do app ou a página perder a
+ligação com o CRM:
+
+- **Dono e Gerente recebem uma notificação** (sininho e celular): "Leads do Facebook pararam de
+  chegar".
+- Aparece uma **faixa vermelha no topo do CRM** com o botão **Reconectar**. É só clicar, fazer o
+  login com Facebook de novo e a faixa some.
+- O aviso vai uma vez só por problema (não fica repetindo a cada 6 horas).
+- Se o problema for só a ligação da página com o CRM, o próprio CRM tenta refazer sozinho antes de
+  avisar.
+
+---
+
+## 12. Lead que se cadastra de novo
+
+**Pra quem:** todos.
+**Quando:** a mesma pessoa preenche outro formulário (outro anúncio do Facebook, o site, etc.).
+
+O CRM reconhece a pessoa pelo **WhatsApp** (mesmo escrito diferente, com ou sem o 9, com ou sem +55)
+ou, se o formulário não pediu telefone, pelo **e-mail**. Em vez de criar outro card:
+
+- O card que já existe ganha o selo **"Cadastrou de novo"** e o Histórico registra qual formulário
+  ela preencheu.
+- **Se o lead tem corretor**, ele continua com o mesmo corretor, que recebe uma notificação "Seu
+  lead se cadastrou de novo" — é um ótimo momento pra ligar.
+- **Se o lead tinha sido descartado**, ele volta pro **Lead Novo** e entra de novo na roleta.
+- Assim a mesma pessoa nunca fica com dois corretores.
+
+Mesmo final de telefone com **DDD diferente** é tratado como outra pessoa.
+
+---
+
+## 13. Etiqueta "Fora do horário"
+
+**Pra quem:** todos.
+
+Lead que chega **fora do horário de atendimento** da imobiliária (madrugada, fim de semana, feriado
+configurado como fechado) ganha sozinho a etiqueta **"Fora do horário"**, seja do Facebook, do site
+ou de uma primeira mensagem no WhatsApp. De manhã o corretor já sabe por quais começar, e dá pra
+filtrar por essa etiqueta em **Conversas**.
+
+- O horário é o mesmo que o dono configura para o plantão.
+- A etiqueta é criada sozinha na primeira vez. Dá pra trocar a cor dela como qualquer etiqueta.
+
 ---
 
 ## Pendências (ainda não existem — não prometer ao cliente)

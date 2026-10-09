@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { integracoesFacebook, imobiliarias } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { cifrar, decifrar } from '../lib/crypto.js';
+import { checarConexao } from '../lib/facebookSaude.js';
 import { GRAPH, assinarLeadgen, fbConfigurado, frontendUrl, hubLiberarPagina, hubRegistrarPagina, lerEstado, paginasDoUsuario, trocarCodigo, urlLoginFacebook } from '../lib/facebook.js';
 
 function publicUrl() {
@@ -251,6 +252,17 @@ integracoesRouter.delete('/facebook/:id', async (req, res) => {
 integracoesRouter.post('/facebook/:id/testar', async (req, res) => {
   const row = await daImobiliaria(req.params.id, req.auth!.imobiliariaId);
   if (!row) return res.status(404).json({ error: 'Conexão não encontrada' });
+  // Conexão por login: mesma checagem da vigia automática (acesso + webhook de leads da página).
+  if (row.origem === 'oauth') {
+    const r = await checarConexao(row);
+    if (r === 'indeterminado') return res.json({ ok: false, erro: 'Não foi possível falar com o Facebook agora. Tente de novo em instantes.' });
+    if (r === 'ok') {
+      await db.update(integracoesFacebook).set({ ultimoErro: null }).where(eq(integracoesFacebook.id, row.id));
+      return res.json({ ok: true, formulario: row.nomeConta });
+    }
+    await db.update(integracoesFacebook).set({ ultimoErro: r.erro }).where(eq(integracoesFacebook.id, row.id));
+    return res.json({ ok: false, erro: r.erro });
+  }
   let token: string;
   try { token = decifrar({ cifrado: row.tokenCifrado, iv: row.tokenIv, tag: row.tokenTag }); }
   catch { return res.status(400).json({ ok: false, erro: 'Não foi possível ler o token salvo (chave de criptografia mudou?)' }); }

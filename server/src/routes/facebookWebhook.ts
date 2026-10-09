@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, like } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
-import { integracoesFacebook, leads } from '../db/schema.js';
+import { eventosLead, integracoesFacebook, leads } from '../db/schema.js';
 import { decifrar } from '../lib/crypto.js';
 import { registrarEvento } from '../lib/eventos.js';
 import { assinaturaValida, buscarLead, fbConfigurado, mapearCampos } from '../lib/facebook.js';
@@ -58,9 +58,15 @@ async function processar(io: SocketServer, corpo: CorpoWebhook) {
 
 async function receberLead(io: SocketServer, conexao: typeof integracoesFacebook.$inferSelect, leadgenId: string) {
   const imobId = conexao.imobiliariaId;
+  // Mesmo aviso de novo? Pode ter virado lead novo (fb_lead_id) ou "cadastrou de novo" num card que
+  // já existia (marca [fb:<id>] no histórico).
   const [jaExiste] = await db.select({ id: leads.id }).from(leads)
     .where(and(eq(leads.imobiliariaId, imobId), eq(leads.fbLeadId, leadgenId))).limit(1);
   if (jaExiste) return;
+  const [jaRecadastrado] = await db.select({ id: eventosLead.id }).from(eventosLead).where(and(
+    eq(eventosLead.imobiliariaId, imobId), eq(eventosLead.tipo, 'recadastro'), like(eventosLead.descricao, '%[fb:' + leadgenId + ']%'),
+  )).limit(1);
+  if (jaRecadastrado) return;
 
   const token = decifrar({ cifrado: conexao.tokenCifrado, iv: conexao.tokenIv, tag: conexao.tokenTag });
   const lead = await buscarLead(leadgenId, token);

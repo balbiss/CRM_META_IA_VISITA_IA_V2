@@ -253,6 +253,25 @@ reais do imóvel (antes aparecia "R$ 0").
     (opcional, cai em `CORS_ORIGIN`). No painel da Meta: URI de redirecionamento
     `https://api-v2.visitaia.com.br/api/integracoes/facebook/oauth/callback` e webhook do objeto
     Page no hub (`https://agencia.inoovaweb.com.br/webhook/app/<id do app no hub>`, campo `leadgen`).
+  - **Vigia da conexão** (`lib/facebookSaude.ts`): 1 min após o boot e a cada 6 h, para cada conexão
+    `oauth` ativa, `GET /{page}/subscribed_apps` com o token da Página. Erro do Graph = token/acesso
+    perdido; app ausente da lista = tenta reassinar `leadgen`. Transição OK→erro grava `ultimo_erro`
+    e notifica dono/gerentes (notificação `tipo='integracao'` + push) uma vez; volta a OK sozinho.
+    "Testar conexão" de conexão `oauth` usa a mesma checagem. Front: `components/FacebookAlerta.tsx`
+    (faixa no topo do AppShell, só dono/gerente, recarrega integrações a cada 10 min).
+    `FB_GRAPH_URL` (opcional) troca a base do Graph — só para teste local com servidor falso.
+- **Lead repetido** (`criarLead`, vale para Facebook, site e n8n): antes de inserir procura lead da
+  imobiliária com o mesmo telefone (`lib/telefone.ts` `mesmoNumero`: últimos 8 dígitos + DDD quando
+  os dois têm, tira +55 e zero à esquerda) ou, sem telefone, mesmo e-mail. Achou → `recadastrarLead`:
+  `segundo_cadastro = true` (selo "Cadastrou de novo" no card), evento `recadastro` no histórico
+  (com `[fb:<leadgen_id>]` para o webhook não contar o mesmo aviso 2x), preenche e-mail/campanha
+  vazios; com corretor → notificação + push "Seu lead se cadastrou de novo"; sem corretor e
+  descartado/na Rebatida → volta pro Lead Novo, limpa `motivo_descarte` e passa por IA/roleta.
+  Lead novo pelo WhatsApp já casava por telefone em `whatsapp.ts` (inalterado).
+- **Etiqueta "Fora do horário"** (`lib/foraDoHorario.ts`): lead novo de formulário, recadastro e
+  1ª mensagem no WhatsApp fora de `imobiliarias.horario_atendimento` (fuso SP, `isBusinessHoursOpen`)
+  ganha a etiqueta; criada na 1ª vez por imobiliária (cor `#6B5BD2`, emite `tag:changed`) e o
+  `lead:created`/`lead:updated` já sai com `tagIds`.
   Contexto e histórico em [`../VISAO_MULTI_TENANT.md`](../VISAO_MULTI_TENANT.md).
 
 ## 11. Upload de arquivos (MinIO)

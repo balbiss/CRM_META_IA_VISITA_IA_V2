@@ -10,6 +10,7 @@ import { distribuirLead } from '../lib/roleta.js';
 import { configIa, iniciarIa, ehEcoDaIa, pausarIa, mensagemDoCliente, clienteAguardandoCorretor, transcreverAudio } from '../lib/agenteIa.js';
 import { enviarPush } from '../lib/push.js';
 import { registrarEvento } from '../lib/eventos.js';
+import { marcarForaDoHorario } from '../lib/foraDoHorario.js';
 import { pausarPorResposta } from '../lib/followup.js';
 import type { Server as SocketServer } from 'socket.io';
 
@@ -167,7 +168,8 @@ export function whatsappRouter(io: SocketServer) {
         }).returning();
         lead = novo;
         registrarEvento(sessao.imobiliariaId, novo.id, 'criado', 'Lead criado pela primeira mensagem no WhatsApp', novo.nome);
-        io.to('imobiliaria:' + sessao.imobiliariaId).emit('lead:created', novo);
+        const tagIds = await marcarForaDoHorario(io, sessao.imobiliariaId, novo.id).catch(() => null);
+        io.to('imobiliaria:' + sessao.imobiliariaId).emit('lead:created', tagIds ? { ...novo, tagIds } : novo);
         // modo central: sem corretor fixo -> Agente de IA (se ligado) ou roleta.
         // modo corretor: já nasceu com o dono da sessão.
         if (!novo.corretorId) {
