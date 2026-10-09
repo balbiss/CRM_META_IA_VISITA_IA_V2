@@ -263,6 +263,15 @@ Com **"Sugerir imóveis do cadastro"** ligado (quadro "Catálogo de imóveis"):
 - O imóvel de que o cliente gostou fica **anotado no lead** (Imóvel de interesse), pro corretor.
 - **"A IA pode informar o preço"**: desmarcado, ela diz que os valores o corretor passa.
 - **"Fotos por imóvel"**: quantas fotos mandar (padrão 3). Só vão imóveis com foto no cadastro.
+- **Condomínio e IPTU**: se estiverem preenchidos no cadastro do imóvel, a IA responde quando o cliente
+  pergunta e eles aparecem na ficha que vai junto com as fotos.
+- **Bairro**: se o cliente diz o bairro (ou mais de um, "Umarizal ou Nazaré") e há imóvel nele, a IA
+  só oferece os desse bairro. Se não houver, ela pode oferecer outro, mas deixa claro que é em outro
+  bairro.
+- A IA **não afirma condição que não está no cadastro**: "aceita financiamento" não quer dizer que
+  aceita FGTS; isso ela deixa pro corretor confirmar.
+- **Aluguel**: pra quem quer alugar, a pergunta de pagamento vira **garantia** (fiador, caução ou
+  seguro-fiança). A IA não fala de financiamento, FGTS ou consórcio em locação.
 - Se o cliente veio de anúncio de um imóvel específico, esse imóvel entra sempre primeiro.
 
 ### Ligar anúncios da Meta a um imóvel ("Nome na campanha")
@@ -315,7 +324,9 @@ responde "Recebi sua mensagem..." (no máximo uma vez por hora; "ok" e "obrigado
 
 ### Quando a IA passa o lead pra roleta
 
-- Terminou as perguntas obrigatórias e se despediu;
+- Terminou as perguntas obrigatórias e se despediu. Depois de ter as obrigatórias, ela faz no máximo
+  **mais uma** mensagem (as perguntas desejáveis que faltam, ou as fotos) e passa. Se o cliente diz
+  que terminou ("era isso", "obrigado", "depois eu vejo"), passa na hora;
 - O cliente **pediu pra falar com uma pessoa**;
 - O cliente disse que **não tem interesse**;
 - Chegou no **máximo de respostas** configurado;
