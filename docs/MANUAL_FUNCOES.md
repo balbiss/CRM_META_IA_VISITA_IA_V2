@@ -543,6 +543,14 @@ Tudo na tela muda junto.
 3. Na tela do Facebook, **marque a página** da imobiliária e confirme as permissões.
 4. Você volta pro CRM com o aviso **"Recebendo leads de: <nome da página>"**. Pronto.
 
+**Conta do Facebook com várias páginas (ex.: agência com BMs de vários clientes):** depois do login o
+CRM **não conecta nada sozinho**. Abre a janela **"Quais páginas são desta imobiliária?"** com todas as
+páginas que a conta autorizou, cada uma com o **nome da BM** dona dela (e uma busca, quando são muitas).
+Marque só as páginas deste cliente e clique em **Conectar**. Páginas que já são de outra imobiliária
+aparecem bloqueadas; as que você não marcar ficam livres pra conectar no CRM do cliente certo.
+Se a página do cliente novo não aparecer na lista, no Facebook use **"Editar acesso"** e marque ela
+(o Facebook lembra das páginas de logins anteriores).
+
 A partir daí, **todo lead de qualquer formulário daquela página**, de qualquer campanha, cai na hora
 na coluna **Lead Novo** e segue a roleta normal (ou o Agente de IA, se ele estiver ligado pra
 formulários). Formulário novo ou campanha nova não precisa configurar nada.

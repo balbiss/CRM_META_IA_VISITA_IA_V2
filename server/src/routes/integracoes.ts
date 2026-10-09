@@ -7,6 +7,7 @@ import { integracoesFacebook, imobiliarias } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { cifrar, decifrar } from '../lib/crypto.js';
 import { checarConexao } from '../lib/facebookSaude.js';
+import type { PaginaFb } from '../lib/facebook.js';
 import { GRAPH, assinarLeadgen, fbConfigurado, frontendUrl, hubLiberarPagina, hubRegistrarPagina, lerEstado, paginasDoUsuario, trocarCodigo, urlLoginFacebook } from '../lib/facebook.js';
 
 function publicUrl() {
@@ -87,6 +88,33 @@ integracoesRouter.get('/facebook/oauth/callback', async (req, res) => {
     const paginas = await paginasDoUsuario(userToken);
     if (!paginas.length) return volta({ facebook: 'erro', msg: 'Nenhuma página encontrada. Entre com a conta que administra a página da imobiliária e marque a página na tela do Facebook.' });
 
+    // Uma página só e livre: conecta direto (o caso da imobiliária comum).
+    // Mais de uma (agência com páginas de vários clientes): o dono escolhe no CRM quais são desta imobiliária.
+    if (paginas.length > 1 || await paginaEmOutraImobiliaria(paginas[0].id, estado.imobiliariaId)) {
+      const sel = randomBytes(18).toString('base64url');
+      selecoes.set(sel, { imobiliariaId: estado.imobiliariaId, paginas, expira: Date.now() + 15 * 60000 });
+      return volta({ facebook: 'escolher', sel });
+    }
+    volta(await conectarPaginas(estado.imobiliariaId, paginas));
+  } catch (e) {
+    console.error('oauth facebook:', (e as Error).message);
+    volta({ facebook: 'erro', msg: 'O Facebook recusou a conexão: ' + ((e as Error).message || 'erro desconhecido') });
+  }
+});
+
+/** Páginas autorizadas no login esperando o dono escolher quais são da imobiliária (15 min, só em memória). */
+const selecoes = new Map<string, { imobiliariaId: string; paginas: PaginaFb[]; expira: number }>();
+function pegarSelecao(sel: string, imobiliariaId: string) {
+  for (const [k, v] of selecoes) if (v.expira < Date.now()) selecoes.delete(k);
+  const s = selecoes.get(sel);
+  return s && s.imobiliariaId === imobiliariaId ? s : null;
+}
+
+/** Conecta as páginas escolhidas: trava "uma página, uma imobiliária", registra no hub, assina o
+ *  webhook de leads e grava a conexão. Devolve o resumo no formato da volta pro front. */
+async function conectarPaginas(imobiliariaId: string, paginas: PaginaFb[]): Promise<Record<string, string>> {
+  const estado = { imobiliariaId };
+  {
     const conectadas: string[] = [], emOutra: string[] = [], falharam: string[] = [];
     for (const p of paginas) {
       // Uma Página só pode alimentar UMA imobiliária: o mesmo lead nunca cai em duas.
@@ -112,12 +140,9 @@ integracoesRouter.get('/facebook/oauth/callback', async (req, res) => {
     if (emOutra.length) q.emOutra = emOutra.join('|');
     if (falharam.length) q.falharam = falharam.join('|');
     if (!conectadas.length) q.msg = emOutra.length ? 'Essa página já está conectada em outra imobiliária ou outro sistema.' : 'Não foi possível ativar o recebimento de leads da página.';
-    volta(q);
-  } catch (e) {
-    console.error('oauth facebook:', (e as Error).message);
-    volta({ facebook: 'erro', msg: 'O Facebook recusou a conexão: ' + ((e as Error).message || 'erro desconhecido') });
+    return q;
   }
-});
+}
 
 async function paginaEmOutraImobiliaria(pageId: string, imobiliariaId: string) {
   const [outra] = await db.select({ id: integracoesFacebook.id }).from(integracoesFacebook)
@@ -135,6 +160,34 @@ integracoesRouter.use('/facebook', requireRole('dono', 'gerente'));
 integracoesRouter.get('/facebook/oauth/url', (req, res) => {
   if (!fbConfigurado()) return res.status(503).json({ error: 'Conexão com Facebook ainda não configurada no servidor' });
   res.json({ url: urlLoginFacebook(req.auth!.imobiliariaId, req.auth!.sub) });
+});
+
+/** Lista das páginas autorizadas no login, pra escolher quais são desta imobiliária.
+ *  situacao: 'livre' | 'nesta' (já conectada aqui) | 'outra' (de outra imobiliária — bloqueada). */
+integracoesRouter.get('/facebook/oauth/paginas', async (req, res) => {
+  const s = pegarSelecao(String(req.query.sel || ''), req.auth!.imobiliariaId);
+  if (!s) return res.status(410).json({ error: 'A escolha de páginas expirou. Clique em "Conectar com Facebook" de novo.' });
+  const nesta = new Set((await db.select({ pageId: integracoesFacebook.pageId }).from(integracoesFacebook)
+    .where(eq(integracoesFacebook.imobiliariaId, req.auth!.imobiliariaId))).map(r => r.pageId));
+  const lista = [];
+  for (const p of s.paginas) {
+    const situacao = (await paginaEmOutraImobiliaria(p.id, req.auth!.imobiliariaId)) ? 'outra' : nesta.has(p.id) ? 'nesta' : 'livre';
+    lista.push({ id: p.id, nome: p.name, bm: p.business?.name || null, situacao });
+  }
+  res.json(lista);
+});
+
+/** Conecta só as páginas que o dono marcou. */
+integracoesRouter.post('/facebook/oauth/confirmar', async (req, res) => {
+  const parsed = z.object({ sel: z.string().min(10), pageIds: z.array(z.string()).min(1).max(50) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Marque pelo menos uma página' });
+  const s = pegarSelecao(parsed.data.sel, req.auth!.imobiliariaId);
+  if (!s) return res.status(410).json({ error: 'A escolha de páginas expirou. Clique em "Conectar com Facebook" de novo.' });
+  const escolhidas = s.paginas.filter(p => parsed.data.pageIds.includes(p.id));
+  if (!escolhidas.length) return res.status(400).json({ error: 'Marque pelo menos uma página' });
+  const resultado = await conectarPaginas(req.auth!.imobiliariaId, escolhidas);
+  selecoes.delete(parsed.data.sel);
+  res.json(resultado);
 });
 integracoesRouter.use('/site', requireRole('dono', 'gerente'));
 

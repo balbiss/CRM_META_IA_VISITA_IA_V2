@@ -235,6 +235,10 @@ interface AppState {
   testarIntegracaoFb: (id: string) => Promise<{ ok: boolean; msg: string }>;
   /** Leva o dono pro login do Facebook ("Conectar com Facebook"); volta em /integracoes. */
   conectarFacebook: () => Promise<void>;
+  /** Páginas autorizadas no login (quando há mais de uma) pra escolher quais são desta imobiliária. */
+  listarPaginasFb: (sel: string) => Promise<{ id: string; nome: string; bm: string | null; situacao: 'livre' | 'nesta' | 'outra' }[]>;
+  /** Conecta só as páginas marcadas; devolve o resumo no mesmo formato da volta do login. */
+  confirmarPaginasFb: (sel: string, pageIds: string[]) => Promise<Record<string, string>>;
   fetchSessoesWhatsapp: () => Promise<void>;
   conectarWhatsapp: (escopo: 'central' | 'corretor', corretorId?: string, extra?: { rotulo?: string; id?: string }) => Promise<string | null>;
   renomearSessaoWhatsapp: (id: string, rotulo: string) => Promise<void>;
@@ -1099,6 +1103,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(s => ({ integracoesFacebook: s.integracoesFacebook.filter(x => x.id !== id) }));
       get().toast('Conexão removida');
     } catch (e) { get().toast((e as ApiError).message || 'Não foi possível remover a conexão'); }
+  },
+  listarPaginasFb: async sel => {
+    const token = get().token;
+    if (!token) return [];
+    return apiFetch('/api/integracoes/facebook/oauth/paginas?sel=' + encodeURIComponent(sel), token);
+  },
+  confirmarPaginasFb: async (sel, pageIds) => {
+    const token = get().token;
+    if (!token) return { facebook: 'erro', msg: 'Sessão expirada' };
+    const r = await apiFetch<Record<string, string>>('/api/integracoes/facebook/oauth/confirmar', token, { method: 'POST', body: JSON.stringify({ sel, pageIds }) });
+    get().fetchIntegracoes();
+    return r;
   },
   conectarFacebook: async () => {
     const token = get().token;

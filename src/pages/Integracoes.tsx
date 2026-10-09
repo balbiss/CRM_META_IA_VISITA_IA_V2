@@ -33,24 +33,33 @@ export default function Integracoes() {
   const toast = useAppStore(s => s.toast);
   const [conectando, setConectando] = useState(false);
   const [retornoFb, setRetornoFb] = useState<{ ok: boolean; msg: string } | null>(null);
+  // Login autorizou mais de uma página: o dono escolhe quais são desta imobiliária.
+  const [selFb, setSelFb] = useState<string | null>(null);
 
   useEffect(() => { fetchIntegracoes(); }, [fetchIntegracoes]);
 
-  // Volta do login do Facebook: o servidor manda o resultado na URL (?facebook=ok|erro&...).
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const fb = q.get('facebook');
-    if (!fb) return;
-    const lista = (k: string) => (q.get(k) || '').split('|').filter(Boolean);
+  const mostrarResultadoFb = (r: Record<string, string>) => {
+    const fb = r.facebook;
+    const lista = (k: string) => (r[k] || '').split('|').filter(Boolean);
     const conectadas = lista('conectadas'), emOutra = lista('emOutra'), falharam = lista('falharam');
     const partes: string[] = [];
     if (conectadas.length) partes.push('Recebendo leads de: ' + conectadas.join(', ') + '.');
     if (emOutra.length) partes.push('Já conectada em outra imobiliária (não entrou aqui): ' + emOutra.join(', ') + '.');
     if (falharam.length) partes.push('Não deu pra ativar: ' + falharam.join(', ') + '.');
-    if (!conectadas.length && q.get('msg')) partes.unshift(q.get('msg')!);
+    if (!conectadas.length && r.msg) partes.unshift(r.msg);
     setRetornoFb({ ok: fb === 'ok', msg: partes.join(' ') || 'Conexão concluída.' });
     toast(fb === 'ok' ? 'Facebook conectado' : 'Facebook não conectado');
+  };
+
+  // Volta do login do Facebook: o servidor manda o resultado na URL (?facebook=ok|erro|escolher&...).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const fb = q.get('facebook');
+    if (!fb) return;
     window.history.replaceState(null, '', window.location.pathname);
+    if (fb === 'escolher' && q.get('sel')) { setSelFb(q.get('sel')); return; }
+    mostrarResultadoFb(Object.fromEntries(q.entries()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
   if (!isManager) return <MeuWhatsapp modo={modo} />;
@@ -220,6 +229,7 @@ export default function Integracoes() {
       {isManager && <FormularioDoSite />}
 
       {modalAberto && <ConexaoModal conexao={editando} onClose={() => setModalAberto(false)} />}
+      {selFb && <EscolherPaginas sel={selFb} onFim={r => { setSelFb(null); if (r) mostrarResultadoFb(r); }} />}
     </div>
   );
 }
@@ -361,6 +371,76 @@ function GuiaFacebook() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Login do Facebook voltou com mais de uma página (ex.: agência que administra páginas de vários
+ *  clientes): o dono marca quais são DESTA imobiliária. Páginas de outra imobiliária ficam bloqueadas. */
+function EscolherPaginas({ sel, onFim }: { sel: string; onFim: (r: Record<string, string> | null) => void }) {
+  const listar = useAppStore(s => s.listarPaginasFb);
+  const confirmar = useAppStore(s => s.confirmarPaginasFb);
+  const [paginas, setPaginas] = useState<{ id: string; nome: string; bm: string | null; situacao: 'livre' | 'nesta' | 'outra' }[] | null>(null);
+  const [marcadas, setMarcadas] = useState<string[]>([]);
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState('');
+
+  useEffect(() => {
+    listar(sel)
+      .then(l => { setPaginas(l); setMarcadas(l.filter(p => p.situacao === 'nesta').map(p => p.id)); })
+      .catch(e => setErro((e as { message?: string }).message || 'Não foi possível carregar as páginas'));
+  }, [sel, listar]);
+
+  const alternar = (id: string) => setMarcadas(m => (m.includes(id) ? m.filter(x => x !== id) : [...m, id]));
+  const salvar = async () => {
+    setSalvando(true);
+    try { onFim(await confirmar(sel, marcadas)); } catch (e) { setErro((e as { message?: string }).message || 'Não foi possível conectar'); setSalvando(false); }
+  };
+
+  return (
+    <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(8,17,31,.5)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 26 }}>
+      <div className="modal-card" style={{ width: '100%', maxWidth: 500, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: 26, animation: 'fadeUp .14s ease' }}>
+        <h3 style={{ fontFamily: 'Newsreader,serif', fontWeight: 400, fontSize: 22, margin: '0 0 6px' }}>Quais páginas são desta imobiliária?</h3>
+        <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '0 0 16px', lineHeight: 1.6 }}>
+          A conta do Facebook tem acesso a mais de uma página. Marque só as desta imobiliária: os leads delas vão cair
+          aqui. As outras continuam livres pra conectar no CRM do cliente certo.
+        </p>
+        {erro && <p style={{ fontSize: 13, color: 'var(--terra)', margin: '0 0 12px' }}>{erro}</p>}
+        {!paginas && !erro && <p style={{ fontSize: 13, color: 'var(--muted)' }}>Carregando páginas…</p>}
+        {paginas && paginas.length > 6 && (
+          <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar pelo nome da página ou da BM…"
+            style={{ width: '100%', padding: '9px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }} />
+        )}
+        {paginas && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 340, overflowY: 'auto', marginBottom: 18 }}>
+            {[...paginas]
+              .filter(p => !busca.trim() || (p.nome + ' ' + (p.bm || '')).toLowerCase().includes(busca.trim().toLowerCase()))
+              .sort((a, b) => (a.bm || '~').localeCompare(b.bm || '~') || a.nome.localeCompare(b.nome))
+              .map(p => {
+              const bloqueada = p.situacao === 'outra';
+              return (
+                <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', border: '1px solid ' + (marcadas.includes(p.id) ? 'var(--terra)' : 'var(--line)'), borderRadius: 9, cursor: bloqueada ? 'not-allowed' : 'pointer', opacity: bloqueada ? 0.55 : 1, background: 'var(--bg)' }}>
+                  <input type="checkbox" disabled={bloqueada} checked={marcadas.includes(p.id)} onChange={() => alternar(p.id)} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>{p.nome}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)' }}>
+                      {p.bm ? 'BM ' + p.bm + ' · ' : ''}
+                      {bloqueada ? 'Já conectada em outra imobiliária' : p.situacao === 'nesta' ? 'Já conectada aqui' : 'ID ' + p.id}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button onClick={() => onFim(null)} disabled={salvando} style={{ padding: '9px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--card)', fontSize: 13, fontWeight: 600 }}>Cancelar</button>
+          <button onClick={salvar} disabled={salvando || !marcadas.length} style={{ padding: '9px 16px', border: 'none', borderRadius: 8, background: '#1877F2', color: '#fff', fontSize: 13, fontWeight: 600, opacity: !marcadas.length ? 0.5 : 1 }}>
+            {salvando ? 'Conectando…' : 'Conectar ' + (marcadas.length === 1 ? '1 página' : marcadas.length + ' páginas')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

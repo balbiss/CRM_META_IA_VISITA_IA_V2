@@ -63,11 +63,24 @@ export async function trocarCodigo(code: string) {
   return longo.access_token;
 }
 
-export interface PaginaFb { id: string; name: string; access_token: string }
+export interface PaginaFb { id: string; name: string; access_token: string; business?: { id: string; name: string } }
 
+/** Todas as Páginas que o login autorizou (com paginação — agência pode ter centenas, de várias BMs),
+ *  com o nome da BM dona de cada uma quando o Facebook informa (ajuda a agência a não marcar a errada). */
 export async function paginasDoUsuario(userToken: string): Promise<PaginaFb[]> {
-  const r = await graph<{ data: PaginaFb[] }>(GRAPH + '/me/accounts?' + new URLSearchParams({ fields: 'id,name,access_token', limit: '100', access_token: userToken }));
-  return (r.data || []).filter(p => p.access_token);
+  const buscar = async (fields: string) => {
+    const todas: PaginaFb[] = [];
+    let url: string | undefined = GRAPH + '/me/accounts?' + new URLSearchParams({ fields, limit: '100', access_token: userToken });
+    for (let i = 0; url && i < 20; i++) {
+      const r: { data?: PaginaFb[]; paging?: { next?: string } } = await graph(url);
+      todas.push(...(r.data || []));
+      url = r.paging?.next;
+    }
+    return todas;
+  };
+  // "business" pode ser recusado em alguma conta: aí lista sem o nome da BM, mas lista.
+  const lista = await buscar('id,name,access_token,business{id,name}').catch(() => buscar('id,name,access_token'));
+  return lista.filter(p => p.access_token);
 }
 
 /** Faz a Página avisar o nosso app a cada lead novo (campo `leadgen` do webhook). */
