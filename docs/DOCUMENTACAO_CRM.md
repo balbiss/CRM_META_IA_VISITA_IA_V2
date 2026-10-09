@@ -243,12 +243,16 @@ reais do imóvel (antes aparecia "R$ 0").
     responde 200 na hora, busca o lead no Graph com o token da Página e chama `criarLead` com
     `fbLeadId`. Dedup: índice único `(imobiliaria_id, fb_lead_id)` em `leads`. Perguntas extras do
     formulário vão para o histórico (`eventos_lead`, tipo `formulario`).
-  - Página que não é de nenhuma imobiliária do CRM: o corpo é repassado, com a assinatura original,
-    para `FB_WEBHOOK_REPASSE_URL` (n8n da InoovaWeb, produto Conecta Leads avulso).
-  - Envs: `FB_APP_ID`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `FB_WEBHOOK_REPASSE_URL`, `FRONTEND_URL`
+  - **Hub InoovaWeb** (`agencia.inoovaweb.com.br`, aba "Leads (CRMs)"): o webhook do app Meta aponta
+    pro hub, não pro CRM, porque vários CRMs usam o mesmo app. Ao conectar, o CRM registra a Página
+    no hub (`POST HUB_LEADS_URL/api/leads/pages`, header `x-hub-key`); 409 = Página de outro sistema.
+    Ao excluir a conexão, libera (`DELETE .../api/leads/pages/:pageId`). O hub entrega cada aviso
+    `leadgen` só pro sistema dono, com corpo e assinatura originais; Página sem dono vai pros destinos
+    do app no hub (n8n do Conecta Leads avulso).
+  - Envs: `FB_APP_ID`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `HUB_LEADS_URL`, `HUB_LEADS_KEY`, `FRONTEND_URL`
     (opcional, cai em `CORS_ORIGIN`). No painel da Meta: URI de redirecionamento
     `https://api-v2.visitaia.com.br/api/integracoes/facebook/oauth/callback` e webhook do objeto
-    Page em `https://api-v2.visitaia.com.br/api/webhooks/facebook` (campo `leadgen`).
+    Page no hub (`https://agencia.inoovaweb.com.br/webhook/app/<id do app no hub>`, campo `leadgen`).
   Contexto e histórico em [`../VISAO_MULTI_TENANT.md`](../VISAO_MULTI_TENANT.md).
 
 ## 11. Upload de arquivos (MinIO)

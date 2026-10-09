@@ -113,3 +113,32 @@ export function assinaturaValida(rawBody: Buffer | undefined, header: string | u
   const recebido = header.slice(7);
   return esperado.length === recebido.length && timingSafeEqual(Buffer.from(esperado), Buffer.from(recebido));
 }
+
+// --- Hub InoovaWeb (agencia.inoovaweb.com.br): o webhook do app Meta chega no hub, que entrega
+// cada lead só pro sistema dono da Página. O CRM registra/libera as Páginas que conecta. ---
+function hub() {
+  const url = (process.env.HUB_LEADS_URL || '').replace(/\/$/, '');
+  const key = process.env.HUB_LEADS_KEY || '';
+  return url && key ? { url, key } : null;
+}
+
+/** 'ok' = Página é deste CRM no hub · 'outro' = já pertence a outro sistema · 'erro' = hub fora do ar. */
+export async function hubRegistrarPagina(pageId: string, pageName: string, ref: string): Promise<'ok' | 'outro' | 'erro'> {
+  const h = hub();
+  if (!h) return 'ok'; // sem hub configurado, o CRM recebe o webhook direto
+  try {
+    const r = await fetch(h.url + '/api/leads/pages', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-key': h.key },
+      body: JSON.stringify({ pageId, pageName, ref }),
+    });
+    if (r.status === 409) return 'outro';
+    return r.ok ? 'ok' : 'erro';
+  } catch { return 'erro'; }
+}
+
+export async function hubLiberarPagina(pageId: string) {
+  const h = hub();
+  if (!h) return;
+  await fetch(h.url + '/api/leads/pages/' + encodeURIComponent(pageId), { method: 'DELETE', headers: { 'x-hub-key': h.key } })
+    .catch(e => console.error('hub: liberar página falhou —', (e as Error).message));
+}

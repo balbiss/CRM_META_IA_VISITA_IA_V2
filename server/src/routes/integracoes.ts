@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { integracoesFacebook, imobiliarias } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { cifrar, decifrar } from '../lib/crypto.js';
-import { GRAPH, assinarLeadgen, fbConfigurado, frontendUrl, lerEstado, paginasDoUsuario, trocarCodigo, urlLoginFacebook } from '../lib/facebook.js';
+import { GRAPH, assinarLeadgen, fbConfigurado, frontendUrl, hubLiberarPagina, hubRegistrarPagina, lerEstado, paginasDoUsuario, trocarCodigo, urlLoginFacebook } from '../lib/facebook.js';
 
 function publicUrl() {
   return (process.env.PUBLIC_URL || 'https://api.visitaia.com.br').replace(/\/$/, '');
@@ -90,8 +90,14 @@ integracoesRouter.get('/facebook/oauth/callback', async (req, res) => {
     for (const p of paginas) {
       // Uma Página só pode alimentar UMA imobiliária: o mesmo lead nunca cai em duas.
       if (await paginaEmOutraImobiliaria(p.id, estado.imobiliariaId)) { emOutra.push(p.name); continue; }
-      let erro: string | null = null;
-      try { await assinarLeadgen(p.id, p.access_token); } catch (e) { erro = (e as Error).message; falharam.push(p.name); }
+      // ...nem em outro sistema que usa o mesmo app Meta (o hub é quem garante isso entre CRMs).
+      const noHub = await hubRegistrarPagina(p.id, p.name, estado.imobiliariaId);
+      if (noHub === 'outro') { emOutra.push(p.name); continue; }
+      let erro: string | null = noHub === 'erro' ? 'Não foi possível registrar a página no hub de leads. Tente conectar de novo.' : null;
+      if (!erro) {
+        try { await assinarLeadgen(p.id, p.access_token); } catch (e) { erro = (e as Error).message; }
+      }
+      if (erro) falharam.push(p.name);
       const { cifrado, iv, tag } = cifrar(p.access_token);
       const dados = { nomeConta: p.name, tokenCifrado: cifrado, tokenIv: iv, tokenTag: tag, ativo: true, ultimoErro: erro };
       const [existente] = await db.select({ id: integracoesFacebook.id }).from(integracoesFacebook).where(and(
@@ -104,7 +110,7 @@ integracoesRouter.get('/facebook/oauth/callback', async (req, res) => {
     const q: Record<string, string> = { facebook: conectadas.length ? 'ok' : 'erro', conectadas: conectadas.join('|') };
     if (emOutra.length) q.emOutra = emOutra.join('|');
     if (falharam.length) q.falharam = falharam.join('|');
-    if (!conectadas.length) q.msg = emOutra.length ? 'Essa página já está conectada em outra imobiliária.' : 'Não foi possível ativar o recebimento de leads da página.';
+    if (!conectadas.length) q.msg = emOutra.length ? 'Essa página já está conectada em outra imobiliária ou outro sistema.' : 'Não foi possível ativar o recebimento de leads da página.';
     volta(q);
   } catch (e) {
     console.error('oauth facebook:', (e as Error).message);
@@ -233,8 +239,11 @@ integracoesRouter.patch('/facebook/:id', async (req, res) => {
 });
 
 integracoesRouter.delete('/facebook/:id', async (req, res) => {
-  if (!(await daImobiliaria(req.params.id, req.auth!.imobiliariaId))) return res.status(404).json({ error: 'Conexão não encontrada' });
+  const row = await daImobiliaria(req.params.id, req.auth!.imobiliariaId);
+  if (!row) return res.status(404).json({ error: 'Conexão não encontrada' });
   await db.delete(integracoesFacebook).where(eq(integracoesFacebook.id, req.params.id));
+  // Página conectada por login: libera no hub (outro sistema/imobiliária pode conectar depois).
+  if (row.origem === 'oauth') await hubLiberarPagina(row.pageId);
   res.json({ ok: true });
 });
 

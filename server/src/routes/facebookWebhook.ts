@@ -11,9 +11,9 @@ import { criarLead, normalizarFinalidade } from './captacao.js';
 interface AvisoLeadgen { leadgen_id?: string; page_id?: string; form_id?: string; ad_id?: string }
 interface CorpoWebhook { object?: string; entry?: { id: string; changes?: { field: string; value: AvisoLeadgen }[] }[] }
 
-/** Webhook do app Meta (Conecta Leads). Um endereço só pra TODAS as imobiliárias:
- *  o lead vai pra imobiliária dona da Página (`page_id`). Página que não é de cliente do CRM
- *  é repassada pro n8n da InoovaWeb (produto Conecta Leads avulso), com a assinatura original. */
+/** Webhook de leads do app Meta (Conecta Leads). Chega pelo hub InoovaWeb (agencia.inoovaweb.com.br),
+ *  que entrega só os avisos das Páginas deste CRM, com o corpo e a assinatura originais da Meta.
+ *  Aqui o lead vai pra imobiliária dona da Página (`page_id`); Página desconhecida é ignorada. */
 export function facebookWebhookRouter(io: SocketServer) {
   const router = Router();
 
@@ -31,15 +31,14 @@ export function facebookWebhookRouter(io: SocketServer) {
     if (!assinaturaValida(raw, req.header('x-hub-signature-256'))) return res.sendStatus(401);
     // Responde na hora (a Meta reenvia se demorar) e processa em seguida.
     res.sendStatus(200);
-    processar(io, req.body as CorpoWebhook, raw!, req.headers).catch(e => console.error('webhook facebook:', (e as Error).message));
+    processar(io, req.body as CorpoWebhook).catch(e => console.error('webhook facebook:', (e as Error).message));
   });
 
   return router;
 }
 
-async function processar(io: SocketServer, corpo: CorpoWebhook, raw: Buffer, headers: Record<string, unknown>) {
+async function processar(io: SocketServer, corpo: CorpoWebhook) {
   if (corpo.object !== 'page') return;
-  let repassar = false;
   for (const entry of corpo.entry || []) {
     for (const ch of entry.changes || []) {
       if (ch.field !== 'leadgen' || !ch.value?.leadgen_id) continue;
@@ -47,7 +46,7 @@ async function processar(io: SocketServer, corpo: CorpoWebhook, raw: Buffer, hea
       const [conexao] = await db.select().from(integracoesFacebook).where(and(
         eq(integracoesFacebook.pageId, pageId), eq(integracoesFacebook.origem, 'oauth'), eq(integracoesFacebook.ativo, true),
       )).limit(1);
-      if (!conexao) { repassar = true; continue; }
+      if (!conexao) continue;
       await receberLead(io, conexao, ch.value.leadgen_id).catch(async e => {
         const msg = (e as Error).message || 'Falha ao buscar o lead no Facebook';
         await db.update(integracoesFacebook).set({ ultimoErro: msg }).where(eq(integracoesFacebook.id, conexao.id));
@@ -55,7 +54,6 @@ async function processar(io: SocketServer, corpo: CorpoWebhook, raw: Buffer, hea
       });
     }
   }
-  if (repassar) await repassarProN8n(raw, headers);
 }
 
 async function receberLead(io: SocketServer, conexao: typeof integracoesFacebook.$inferSelect, leadgenId: string) {
@@ -90,15 +88,4 @@ async function receberLead(io: SocketServer, conexao: typeof integracoesFacebook
     registrarEvento(imobId, row.id, 'formulario', 'Respostas do formulário: ' + c.extras.map(x => x.pergunta + ': ' + x.resposta).join(' · '));
   }
   await db.update(integracoesFacebook).set({ ultimaSyncEm: new Date(), ultimoErro: null }).where(eq(integracoesFacebook.id, conexao.id));
-}
-
-async function repassarProN8n(raw: Buffer, headers: Record<string, unknown>) {
-  const url = process.env.FB_WEBHOOK_REPASSE_URL;
-  if (!url) return;
-  const h: Record<string, string> = { 'content-type': 'application/json' };
-  for (const k of ['x-hub-signature', 'x-hub-signature-256', 'user-agent']) {
-    if (typeof headers[k] === 'string') h[k] = headers[k] as string;
-  }
-  await fetch(url, { method: 'POST', headers: h, body: new Uint8Array(raw) })
-    .catch(e => console.error('webhook facebook: repasse n8n falhou —', (e as Error).message));
 }
