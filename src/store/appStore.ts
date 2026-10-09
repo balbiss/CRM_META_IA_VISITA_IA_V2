@@ -11,7 +11,7 @@ interface RemoteFilaRow { corretorId: string; posicao: number; nome: string; emP
 export interface RemoteTag { id: string; nome: string; cor: string; ordem: number }
 export type ModoWhatsapp = 'central' | 'corretor';
 export interface IntegracaoFacebook {
-  id: string; nomeConta: string; pageId: string; formId: string;
+  id: string; nomeConta: string; pageId: string; formId: string | null; origem: 'manual' | 'oauth';
   ativo: boolean; ultimaSyncEm: string | null; ultimoErro: string | null; criadoEm: string; tokenFinal: string;
 }
 export interface IntegracaoFacebookInput { nomeConta: string; pageId: string; formId: string; accessToken: string }
@@ -233,6 +233,8 @@ interface AppState {
   atualizarIntegracaoFb: (id: string, patch: Partial<IntegracaoFacebookInput> & { ativo?: boolean }) => Promise<void>;
   excluirIntegracaoFb: (id: string) => Promise<void>;
   testarIntegracaoFb: (id: string) => Promise<{ ok: boolean; msg: string }>;
+  /** Leva o dono pro login do Facebook ("Conectar com Facebook"); volta em /integracoes. */
+  conectarFacebook: () => Promise<void>;
   fetchSessoesWhatsapp: () => Promise<void>;
   conectarWhatsapp: (escopo: 'central' | 'corretor', corretorId?: string, extra?: { rotulo?: string; id?: string }) => Promise<string | null>;
   renomearSessaoWhatsapp: (id: string, rotulo: string) => Promise<void>;
@@ -1098,13 +1100,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().toast('Conexão removida');
     } catch (e) { get().toast((e as ApiError).message || 'Não foi possível remover a conexão'); }
   },
+  conectarFacebook: async () => {
+    const token = get().token;
+    if (!token) return;
+    try {
+      const { url } = await apiFetch<{ url: string }>('/api/integracoes/facebook/oauth/url', token);
+      window.location.href = url;
+    } catch (e) { get().toast((e as ApiError).message || 'Não foi possível abrir o login do Facebook'); }
+  },
   testarIntegracaoFb: async id => {
     const token = get().token;
     if (!token) return { ok: false, msg: 'Sem sessão' };
     try {
       const r = await apiFetch<{ ok: boolean; formulario?: string; erro?: string }>('/api/integracoes/facebook/' + id + '/testar', token, { method: 'POST' });
       get().fetchIntegracoes();
-      return r.ok ? { ok: true, msg: 'OK — formulário "' + (r.formulario || '') + '"' } : { ok: false, msg: r.erro || 'Falhou' };
+      return r.ok ? { ok: true, msg: 'OK — "' + (r.formulario || '') + '"' } : { ok: false, msg: r.erro || 'Falhou' };
     } catch (e) {
       return { ok: false, msg: (e as ApiError).message || 'Falhou' };
     }

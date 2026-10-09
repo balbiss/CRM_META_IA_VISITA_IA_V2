@@ -37,6 +37,7 @@ import { varrerIa } from './lib/agenteIa.js';
 import { relatoriosRouter } from './routes/relatorios.js';
 import { importacoesRouter } from './routes/importacoes.js';
 import { agenteIaRouter } from './routes/agenteIa.js';
+import { facebookWebhookRouter } from './routes/facebookWebhook.js';
 
 const app = express();
 // O webhook do formulário de site é público (token na URL) e a página fica em domínio de
@@ -45,7 +46,10 @@ const corsPublico = cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], all
 const corsRestrito = cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' });
 const publico = (p: string) => p.startsWith('/api/captacao/site') || p.startsWith('/api/sites/publico');
 app.use((req, res, next) => (publico(req.path) ? corsPublico : corsRestrito)(req, res, next));
-app.use(express.json());
+// Webhook da Meta: guarda o corpo bruto pra conferir a assinatura (x-hub-signature-256).
+app.use(express.json({
+  verify: (req, _res, buf) => { if ((req as express.Request).originalUrl?.startsWith('/api/webhooks/facebook')) (req as unknown as { rawBody: Buffer }).rawBody = buf; },
+}));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
@@ -96,6 +100,7 @@ app.use('/api/contatos-whatsapp', contatosWhatsappRouter(io));
 app.use('/api/agente-ia', agenteIaRouter(io));
 app.use('/api/importacoes', importacoesRouter(io));
 app.use('/api/relatorios', relatoriosRouter());
+app.use('/api/webhooks/facebook', facebookWebhookRouter(io));
 
 const port = Number(process.env.PORT) || 3001;
 

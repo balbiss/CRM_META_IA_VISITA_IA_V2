@@ -225,7 +225,30 @@ reais do imóvel (antes aparecia "R$ 0").
   novos de cada formulário no Graph API (marca-d'água por conexão), posta cada lead em
   `POST /api/captacao/facebook` com o `imobiliariaId` certo e reporta o resultado em
   `POST /api/integracoes/facebook/sync-status` (aparece na coluna "Situação" da tela de Integrações).
+  Desde a migração 0041 a varredura só pega conexões `origem = 'manual'` com `form_id`.
   Guia para a imobiliária pegar token + IDs: [`GUIA_FACEBOOK_LEAD_ADS.md`](GUIA_FACEBOOK_LEAD_ADS.md).
+- **Conectar com Facebook (OAuth + webhook em tempo real, app Meta "Conecta Leads InoovaWeb"
+  `2163891718345818`, aprovado no App Review em 09/10/2026):**
+  - `GET /api/integracoes/facebook/oauth/url` (dono/gerente) → link do login da Meta com `state` JWT
+    (15 min) que amarra a volta à imobiliária. Escopos: `pages_show_list`, `pages_read_engagement`,
+    `pages_manage_metadata`, `leads_retrieval`, `business_management`.
+  - `GET /api/integracoes/facebook/oauth/callback` (público) → troca `code` por token de usuário
+    longo → `/me/accounts` → para cada Página: assina `leadgen` (`POST /{page}/subscribed_apps`) e
+    grava em `integracoes_facebook` com `origem = 'oauth'`, `form_id = null` (todos os formulários),
+    token da Página cifrado. Redireciona para `FRONTEND_URL/integracoes?facebook=ok|erro&...`.
+  - **Isolamento:** uma Página só pode estar em UMA imobiliária (`paginaEmOutraImobiliaria`, vale
+    também para conexão manual, 409).
+  - `GET|POST /api/webhooks/facebook` (`routes/facebookWebhook.ts`): GET responde o `hub.challenge`
+    com `FB_VERIFY_TOKEN`; POST confere `x-hub-signature-256` com `FB_APP_SECRET` (corpo bruto),
+    responde 200 na hora, busca o lead no Graph com o token da Página e chama `criarLead` com
+    `fbLeadId`. Dedup: índice único `(imobiliaria_id, fb_lead_id)` em `leads`. Perguntas extras do
+    formulário vão para o histórico (`eventos_lead`, tipo `formulario`).
+  - Página que não é de nenhuma imobiliária do CRM: o corpo é repassado, com a assinatura original,
+    para `FB_WEBHOOK_REPASSE_URL` (n8n da InoovaWeb, produto Conecta Leads avulso).
+  - Envs: `FB_APP_ID`, `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `FB_WEBHOOK_REPASSE_URL`, `FRONTEND_URL`
+    (opcional, cai em `CORS_ORIGIN`). No painel da Meta: URI de redirecionamento
+    `https://api-v2.visitaia.com.br/api/integracoes/facebook/oauth/callback` e webhook do objeto
+    Page em `https://api-v2.visitaia.com.br/api/webhooks/facebook` (campo `leadgen`).
   Contexto e histórico em [`../VISAO_MULTI_TENANT.md`](../VISAO_MULTI_TENANT.md).
 
 ## 11. Upload de arquivos (MinIO)

@@ -112,7 +112,10 @@ export const integracoesFacebook = pgTable('integracoes_facebook', {
   imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
   nomeConta: text('nome_conta').notNull(),
   pageId: text('page_id').notNull(),
-  formId: text('form_id').notNull(),
+  // null = todos os formulários da página (conexão feita pelo botão 'Conectar com Facebook').
+  formId: text('form_id'),
+  // 'manual' = token colado à mão (automação n8n varre o formulário) | 'oauth' = login com Facebook (webhook em tempo real).
+  origem: text('origem').notNull().default('manual'),
   tokenCifrado: text('token_cifrado').notNull(),
   tokenIv: text('token_iv').notNull(),
   tokenTag: text('token_tag').notNull(),
@@ -170,6 +173,8 @@ export const leads = pgTable('leads', {
   colunaId: uuid('coluna_id').references(() => colunasKanban.id, { onDelete: 'set null' }),
   corretorId: uuid('corretor_id').references(() => perfis.id, { onDelete: 'set null' }),
   campanha: text('campanha'),
+  // ID do lead no Facebook (leadgen_id) — evita duplicar quando a Meta reenvia o mesmo aviso.
+  fbLeadId: text('fb_lead_id'),
   segundoCadastro: boolean('segundo_cadastro').notNull().default(false),
   // Compra (venda) ou aluguel (locacao) — do formulário do site/facebook ou do número de WhatsApp.
   // Usado pra rotear o lead pra roleta certa.
@@ -205,6 +210,7 @@ export const leads = pgTable('leads', {
   imobiliariaIdx: index('leads_imobiliaria_id_idx').on(table.imobiliariaId),
   corretorIdx: index('leads_corretor_id_idx').on(table.corretorId),
   colunaIdx: index('leads_coluna_id_idx').on(table.colunaId),
+  fbLeadIdx: uniqueIndex('leads_imobiliaria_fb_lead_id_uq').on(table.imobiliariaId, table.fbLeadId),
 }));
 
 // Etiquetas coloridas por imobiliária (multi-tenant) — atribuídas a leads via lead_tags.

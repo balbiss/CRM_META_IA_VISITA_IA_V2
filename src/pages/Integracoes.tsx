@@ -29,7 +29,29 @@ export default function Integracoes() {
   const [testando, setTestando] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Record<string, { ok: boolean; msg: string }>>({});
 
+  const conectarFacebook = useAppStore(s => s.conectarFacebook);
+  const toast = useAppStore(s => s.toast);
+  const [conectando, setConectando] = useState(false);
+  const [retornoFb, setRetornoFb] = useState<{ ok: boolean; msg: string } | null>(null);
+
   useEffect(() => { fetchIntegracoes(); }, [fetchIntegracoes]);
+
+  // Volta do login do Facebook: o servidor manda o resultado na URL (?facebook=ok|erro&...).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const fb = q.get('facebook');
+    if (!fb) return;
+    const lista = (k: string) => (q.get(k) || '').split('|').filter(Boolean);
+    const conectadas = lista('conectadas'), emOutra = lista('emOutra'), falharam = lista('falharam');
+    const partes: string[] = [];
+    if (conectadas.length) partes.push('Recebendo leads de: ' + conectadas.join(', ') + '.');
+    if (emOutra.length) partes.push('Já conectada em outra imobiliária (não entrou aqui): ' + emOutra.join(', ') + '.');
+    if (falharam.length) partes.push('Não deu pra ativar: ' + falharam.join(', ') + '.');
+    if (!conectadas.length && q.get('msg')) partes.unshift(q.get('msg')!);
+    setRetornoFb({ ok: fb === 'ok', msg: partes.join(' ') || 'Conexão concluída.' });
+    toast(fb === 'ok' ? 'Facebook conectado' : 'Facebook não conectado');
+    window.history.replaceState(null, '', window.location.pathname);
+  }, [toast]);
 
   if (!isManager) return <MeuWhatsapp modo={modo} />;
 
@@ -110,16 +132,33 @@ export default function Integracoes() {
           <div>
             <p style={secTitle}>Captação de leads do Facebook</p>
             <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '4px 0 0', maxWidth: 560, lineHeight: 1.6 }}>
-              Cada formulário de Lead Ads da sua imobiliária. A automação busca os leads novos a cada poucos minutos
-              e joga direto na coluna "Lead Novo".
+              Clique em "Conectar com Facebook", entre com a conta que administra a página da imobiliária e marque a página.
+              Todo lead de qualquer formulário dessa página cai na hora na coluna "Lead Novo", só aqui na sua imobiliária.
             </p>
           </div>
           {isManager && (
-            <button onClick={() => { setEditando(null); setModalAberto(true); }} style={{ padding: '9px 16px', border: 'none', borderRadius: 8, background: 'var(--terra)', color: '#fff', fontSize: 13, fontWeight: 600, flex: 'none' }}>
-              + Nova conexão
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 'none' }}>
+              <button
+                onClick={async () => { setConectando(true); await conectarFacebook(); setConectando(false); }}
+                disabled={conectando}
+                style={{ padding: '9px 16px', border: 'none', borderRadius: 8, background: '#1877F2', color: '#fff', fontSize: 13, fontWeight: 600 }}
+              >
+                {conectando ? 'Abrindo o Facebook…' : 'Conectar com Facebook'}
+              </button>
+              <button onClick={() => { setEditando(null); setModalAberto(true); }} style={{ ...btn, padding: '9px 14px', fontSize: 13 }}>
+                + Conexão manual
+              </button>
+            </div>
           )}
         </div>
+
+        {retornoFb && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', margin: '0 0 12px', padding: '11px 13px', borderRadius: 9, border: '1px solid ' + (retornoFb.ok ? 'var(--olive)' : 'var(--terra)'), background: retornoFb.ok ? 'var(--oliveSoft)' : 'var(--bg)' }}>
+            <span style={{ fontWeight: 700, flex: 'none', color: retornoFb.ok ? 'var(--olive)' : 'var(--terra)' }}>{retornoFb.ok ? '✓' : '⚠'}</span>
+            <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.6, flex: 1 }}>{retornoFb.msg}</p>
+            <button onClick={() => setRetornoFb(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 15, flex: 'none' }} aria-label="Fechar">×</button>
+          </div>
+        )}
 
         {isManager && <GuiaFacebook />}
 
@@ -128,7 +167,7 @@ export default function Integracoes() {
         ) : conexoes.length === 0 ? (
           <div style={{ ...card, textAlign: 'center', padding: '36px 20px' }}>
             <p style={{ fontSize: 13.5, color: 'var(--muted)', margin: 0, lineHeight: 1.6 }}>
-              Nenhuma conexão ainda.<br />Clique em "Nova conexão" e cole o ID da página, o ID do formulário e o token do Facebook.
+              Nenhuma página conectada ainda.<br />Clique em "Conectar com Facebook" pra começar a receber os leads.
             </p>
           </div>
         ) : (
@@ -145,12 +184,15 @@ export default function Integracoes() {
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: c.ativo ? 'var(--oliveSoft)' : 'var(--line)', color: c.ativo ? 'var(--olive)' : 'var(--muted)' }}>
                       {c.ativo ? 'Ativa' : 'Pausada'}
                     </span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--muted)' }}>
+                      {c.origem === 'oauth' ? 'Login do Facebook · tempo real' : 'Manual'}
+                    </span>
                   </div>
 
                   <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 9, fontSize: 12.5 }}>
                     <Campo rotulo="ID da página" valor={c.pageId} mono />
-                    <Campo rotulo="ID do formulário" valor={c.formId} mono />
-                    <Campo rotulo="Token" valor={c.tokenFinal} mono />
+                    <Campo rotulo="Formulários" valor={c.formId || 'Todos os formulários da página'} mono={!!c.formId} />
+                    {c.origem !== 'oauth' && <Campo rotulo="Token" valor={c.tokenFinal} mono />}
                     <Campo rotulo="Última captação" valor={fmtData(c.ultimaSyncEm)} />
                     <dt style={dtStyle}>Situação</dt>
                     <dd style={{ margin: 0, display: 'flex', alignItems: 'flex-start', gap: 6, color: statusOk ? 'var(--olive)' : 'var(--terra)', fontWeight: 600 }}>
@@ -162,9 +204,9 @@ export default function Integracoes() {
                   <div className="row-actions" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
                     <button onClick={() => rodarTeste(c.id)} disabled={testando === c.id} style={btn}>{testando === c.id ? 'Testando…' : 'Testar conexão'}</button>
                     <button onClick={() => atualizar(c.id, { ativo: !c.ativo })} style={btn}>{c.ativo ? 'Pausar' : 'Ativar'}</button>
-                    <button onClick={() => { setEditando(c); setModalAberto(true); }} style={btn}>Editar</button>
+                    {c.origem !== 'oauth' && <button onClick={() => { setEditando(c); setModalAberto(true); }} style={btn}>Editar</button>}
                     <button
-                      onClick={() => ask('Remover conexão "' + c.nomeConta + '"?', 'A captação de leads desse formulário para de funcionar.', 'Remover', () => excluir(c.id))}
+                      onClick={() => ask('Remover conexão "' + c.nomeConta + '"?', c.origem === 'oauth' ? 'Os leads dessa página param de chegar no CRM.' : 'A captação de leads desse formulário para de funcionar.', 'Remover', () => excluir(c.id))}
                       style={{ ...btn, color: 'var(--terra)' }}
                     >Excluir</button>
                   </div>
@@ -289,7 +331,7 @@ function GuiaFacebook() {
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer' }}
       >
         <span style={{ width: 8, height: 8, transform: 'rotate(45deg)', flex: 'none', background: aberto ? 'var(--terra)' : 'var(--line)' }} />
-        <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>Como conseguir o token e os IDs do Facebook — passo a passo</span>
+        <span style={{ flex: 1, fontSize: 13.5, fontWeight: 700 }}>Conexão manual (sem login) — como conseguir o token e os IDs</span>
         <span style={{ color: 'var(--muted)', fontSize: 15 }}>{aberto ? '–' : '+'}</span>
       </button>
       {aberto && (

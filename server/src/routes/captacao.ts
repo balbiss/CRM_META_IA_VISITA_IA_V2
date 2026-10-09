@@ -35,6 +35,7 @@ export async function criarLead(io: SocketServer, imobId: string, dados: {
   nome: string; telefone: string; email?: string; mensagem?: string;
   imovelTitulo?: string; imovelId?: string; campanha?: string; canal: string;
   finalidade?: 'venda' | 'locacao' | null;
+  fbLeadId?: string;
 }) {
   const [colunaNova] = await db.select().from(colunasKanban)
     .where(and(eq(colunasKanban.imobiliariaId, imobId), eq(colunasKanban.titulo, 'Lead Novo'))).limit(1);
@@ -72,6 +73,7 @@ export async function criarLead(io: SocketServer, imobId: string, dados: {
     imovelSub,
     ...(valor ? { valor } : {}),
     campanha: dados.campanha?.trim() || null,
+    fbLeadId: dados.fbLeadId || null,
     canal: dados.canal as any,
     finalidade,
     colunaId: colunaNova?.id,

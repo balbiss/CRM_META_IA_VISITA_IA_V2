@@ -518,6 +518,51 @@ Tudo na tela muda junto.
 
 ---
 
+## 11. Conectar com Facebook (leads dos anúncios em tempo real)
+
+**Pra quem:** Dono e Gerente.
+**Onde:** menu **Integrações** → seção **Captação de leads do Facebook** → botão azul
+**Conectar com Facebook**.
+
+### Passo a passo
+
+1. Clique em **Conectar com Facebook**. Abre a tela de login do próprio Facebook.
+2. Entre com a conta que **administra a página da imobiliária** (se quem cuida dos anúncios é uma
+   agência, peça pra pessoa que tem acesso de administrador à página fazer esse passo).
+3. Na tela do Facebook, **marque a página** da imobiliária e confirme as permissões.
+4. Você volta pro CRM com o aviso **"Recebendo leads de: <nome da página>"**. Pronto.
+
+A partir daí, **todo lead de qualquer formulário daquela página**, de qualquer campanha, cai na hora
+na coluna **Lead Novo** e segue a roleta normal (ou o Agente de IA, se ele estiver ligado pra
+formulários). Formulário novo ou campanha nova não precisa configurar nada.
+
+### O que chega no card do lead
+
+- Nome, WhatsApp e e-mail.
+- **Campanha** (nome da campanha do anúncio). Se o nome da campanha tem o nome de um imóvel
+  cadastrado, o CRM já liga o lead a esse imóvel.
+- Se o formulário pergunta se a pessoa quer **comprar ou alugar**, o lead já vai pra roleta certa.
+- As **outras perguntas** do formulário (renda, bairro, etc.) aparecem no **histórico** do lead.
+
+### Cada imobiliária só recebe os próprios leads
+
+- Uma página do Facebook só pode estar conectada em **uma** imobiliária. Se outra imobiliária tentar
+  conectar a mesma página, o CRM recusa e avisa "já está conectada em outra imobiliária".
+- O mesmo lead nunca entra duas vezes, mesmo que o Facebook mande o aviso repetido.
+
+### Pausar ou desconectar
+
+No card da página: **Pausar** (para de receber até ativar de novo) ou **Excluir** (desconecta).
+**Testar conexão** confere se o acesso à página continua válido.
+
+### Conexão manual (jeito antigo)
+
+O botão **+ Conexão manual** continua existindo para quem prefere colar token, ID da página e ID do
+formulário à mão (o guia passo a passo fica logo abaixo do botão). Nesse modo os leads chegam a cada
+5 minutos, por formulário. Para cliente novo, use sempre o **Conectar com Facebook**.
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
 
 - **Agente de IA com personalidade diferente por número**: hoje a configuração da IA (prompt,

@@ -288,6 +288,13 @@
       "when": 1790952692833,
       "tag": "0040_curved_the_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791546080475,
+      "tag": "0041_brief_the_professor",
+      "breakpoints": true
     }
   ]
 }
