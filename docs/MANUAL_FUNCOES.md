@@ -538,6 +538,9 @@ formulários). Formulário novo ou campanha nova não precisa configurar nada.
 
 ### O que chega no card do lead
 
+- **Data e hora em que o lead entrou no CRM**: no card do Kanban ("Entrou hoje 09:37", "ontem
+  18:02", "07/10 14:20"), no topo da ficha ("Entrou no CRM em 09/10/2026 às 09:37") e na coluna
+  **Entrou em** da visão em lista. Vale para lead de qualquer origem (Facebook, site, WhatsApp, manual).
 - Nome, WhatsApp e e-mail.
 - **Campanha** (nome da campanha do anúncio). Se o nome da campanha tem o nome de um imóvel
   cadastrado, o CRM já liga o lead a esse imóvel.

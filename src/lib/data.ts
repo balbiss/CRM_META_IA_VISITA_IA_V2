@@ -89,6 +89,8 @@ export interface Lead {
   motivo: string;
   renda: number;
   entrouNaColunaEm?: string;
+  /** Quando o lead entrou no CRM (ISO). */
+  criadoEm?: string;
   tags: string[];
   /** Agente de IA: 'atendendo' | 'transferido' | 'pausado' | '' (nunca passou pela IA). */
   iaStatus?: string;

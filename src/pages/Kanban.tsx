@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { LayoutGrid, List as ListIcon, X, FileText, MoreVertical, ChevronLeft, ChevronRight, Plus, Check } from 'lucide-react';
+import { LayoutGrid, List as ListIcon, X, FileText, MoreVertical, ChevronLeft, ChevronRight, Plus, Check, Clock } from 'lucide-react';
+import { dataHoraCompleta, dataHoraCurta } from '../lib/datas';
 import { useAppStore } from '../store/appStore';
 import { useRoleInfo } from '../lib/selectors';
 import { canalPill } from '../lib/format';
@@ -238,6 +239,7 @@ export default function Kanban() {
             <span style={{ width: 110 }}>Canal</span>
             {isManager && <span style={{ flex: 1 }}>Corretor</span>}
             <span style={{ width: 180 }}>Coluna</span>
+            <span style={{ width: 110 }}>Entrou em</span>
             <span style={{ width: 90 }}>Tempo</span>
           </div>
           {leads.map((l, i) => (
@@ -260,6 +262,7 @@ export default function Kanban() {
                   {colunas.map(c => <option key={c.id} value={c.id}>{c.titulo}</option>)}
                 </select>
               </span>
+              <span title={dataHoraCompleta(l.criadoEm)} style={{ width: 110, fontSize: 12, color: 'var(--muted)' }}>{dataHoraCurta(l.criadoEm)}</span>
               <span style={{ width: 90, fontSize: 11, color: 'var(--muted)' }}>{l.dias === 0 ? 'hoje' : l.dias + 'd'}</span>
             </div>
           ))}
@@ -354,6 +357,12 @@ export default function Kanban() {
                               <FileText size={11} strokeWidth={2} style={{ flex: 'none' }} />
                               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.corretor || (l.iaStatus === 'atendendo' ? 'IA atendendo' : 'Sem corretor')}</span>
                             </span>
+                            {l.criadoEm && (
+                              <span title={'Entrou no CRM em ' + dataHoraCompleta(l.criadoEm)} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap' }}>
+                                <Clock size={11} strokeWidth={2} style={{ flex: 'none' }} />
+                                Entrou {dataHoraCurta(l.criadoEm)}
+                              </span>
+                            )}
                           </span>
                         </div>
                         <CardTagBar lead={l} />

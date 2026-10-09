@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Paperclip } from 'lucide-react';
+import { dataHoraCompleta } from '../lib/datas';
 import { useAppStore } from '../store/appStore';
 import { useRoleInfo } from '../lib/selectors';
 import { CADENCIAS, MOTIVOS_DESCARTE, APROVACAO, mapMsgs } from '../lib/data';
@@ -124,6 +125,9 @@ export function LeadModal() {
           <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: 'block', fontFamily: 'Newsreader,serif', fontSize: 26, lineHeight: 1.15 }}>{L.nome}</span>
             <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', marginTop: 4 }}>{L.tel} · {L.corretor} · {colAtual}</span>
+            {L.criadoEm && (
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>Entrou no CRM em {dataHoraCompleta(L.criadoEm)}</span>
+            )}
           </span>
           <span style={css(canalPill(L.canal) + ';align-self:center')}>{L.canal}</span>
           <button onClick={closeLead} style={{ border: '1px solid var(--line)', background: 'none', width: 30, height: 30, borderRadius: 8, flex: 'none' }}>×</button>
