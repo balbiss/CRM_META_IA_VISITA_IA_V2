@@ -20,6 +20,7 @@ import { tagsRouter } from './routes/tags.js';
 import { configRouter } from './routes/config.js';
 import { integracoesRouter } from './routes/integracoes.js';
 import { whatsappRouter } from './routes/whatsapp.js';
+import { whatsappOficialRouter } from './routes/whatsappOficial.js';
 import { plataformaRouter } from './routes/plataforma.js';
 import { pushRouter } from './routes/push.js';
 import { tarefasRouter } from './routes/tarefas.js';
@@ -49,7 +50,7 @@ const publico = (p: string) => p.startsWith('/api/captacao/site') || p.startsWit
 app.use((req, res, next) => (publico(req.path) ? corsPublico : corsRestrito)(req, res, next));
 // Webhook da Meta: guarda o corpo bruto pra conferir a assinatura (x-hub-signature-256).
 app.use(express.json({
-  verify: (req, _res, buf) => { if ((req as express.Request).originalUrl?.startsWith('/api/webhooks/facebook')) (req as unknown as { rawBody: Buffer }).rawBody = buf; },
+  verify: (req, _res, buf) => { if (/^\/api\/(webhooks\/facebook|whatsapp-oficial\/webhook)/.test((req as express.Request).originalUrl || '')) (req as unknown as { rawBody: Buffer }).rawBody = buf; },
 }));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -93,6 +94,7 @@ app.use('/api/mensagens', mensagensRouter(io));
 app.use('/api/captacao', captacaoRouter(io));
 app.use('/api/tags', tagsRouter(io));
 app.use('/api/whatsapp', whatsappRouter(io));
+app.use('/api/whatsapp-oficial', whatsappOficialRouter(io));
 app.use('/api/tarefas', tarefasRouter(io));
 app.use('/api/followup', followupRouter(io));
 app.use('/api/sites', sitesRouter(io));

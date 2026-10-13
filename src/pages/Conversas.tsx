@@ -14,6 +14,7 @@ import { AudioRecordButton } from '../components/AudioRecordButton';
 import { EmojiPicker } from '../components/EmojiPicker';
 import { ContatosPendentes, useContatosWhatsapp } from '../components/ContatosPendentes';
 import { apiFetch } from '../lib/api';
+import { AvisoJanelaOficial } from '../components/WhatsappOficial';
 
 export default function Conversas() {
   const allLeads = useAppStore(s => s.leads);
@@ -262,6 +263,7 @@ export default function Conversas() {
                 
               </div>
               <div style={{ borderTop: '1px solid var(--line)', padding: '14px 18px', position: 'relative', background: 'var(--card)', flex: 'none' }}>
+                <AvisoJanelaOficial leadId={CL.id} qtdMensagens={convThread.length} />
                 {slashQ !== null && slashItems.length > 0 && (
                   <div style={{ position: 'absolute', left: 18, right: 18, bottom: 64, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10, padding: 6, boxShadow: '0 12px 28px rgba(28,27,26,.14)' }}>
                     <p style={{ fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--muted)', margin: '6px 10px 8px' }}>Templates rápidos</p>

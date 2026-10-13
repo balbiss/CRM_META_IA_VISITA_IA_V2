@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppStore, type IntegracaoFacebook, type ModoWhatsapp } from '../store/appStore';
 import { useRoleInfo } from '../lib/selectors';
+import { BotaoConectarOficial, OficialDoNumero } from '../components/WhatsappOficial';
 
 const secTitle: React.CSSProperties = { fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--muted)', margin: '0 0 4px' };
 const card: React.CSSProperties = { border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', padding: 20 };
@@ -512,7 +513,7 @@ function ConexaoModal({ conexao, onClose }: { conexao: IntegracaoFacebook | null
 
 // ---- Página enxuta do corretor: conectar só o próprio número ----
 function MeuWhatsapp({ modo }: { modo: ModoWhatsapp }) {
-  const wahaOk = useAppStore(s => s.wahaConfigurado);
+  const naoOficialOk = useAppStore(s => s.naoOficialDisponivel);
   const sessoes = useAppStore(s => s.sessoesWhatsapp);
   const me = useAppStore(s => s.me);
   const conectar = useAppStore(s => s.conectarWhatsapp);
@@ -538,7 +539,7 @@ function MeuWhatsapp({ modo }: { modo: ModoWhatsapp }) {
         <div style={card}><p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.6 }}>
           Sua imobiliária atende por um número central. Não há nada pra conectar aqui — as mensagens saem pelo número da imobiliária.
         </p></div>
-      ) : !wahaOk ? (
+      ) : !naoOficialOk ? (
         <div style={card}><p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.6 }}>
           A conexão por QR code fica disponível assim que o motor de WhatsApp for configurado no servidor. Fale com o seu gerente.
         </p></div>
@@ -571,9 +572,9 @@ function MeuWhatsapp({ modo }: { modo: ModoWhatsapp }) {
   );
 }
 
-// ---- Conexão de número WhatsApp (WAHA) ----
+// ---- Conexão de número WhatsApp (não oficial, por QR code) ----
 function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
-  const wahaOk = useAppStore(s => s.wahaConfigurado);
+  const naoOficialOk = useAppStore(s => s.naoOficialDisponivel);
   const sessoes = useAppStore(s => s.sessoesWhatsapp);
   const perfis = useAppStore(s => s.perfisRemotos);
   const conectar = useAppStore(s => s.conectarWhatsapp);
@@ -586,16 +587,21 @@ function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
   const centrais = sessoes.filter(s => s.escopo === 'central');
   const sessaoDoCorretor = (id: string) => sessoes.find(s => s.escopo === 'corretor' && s.corretorId === id);
 
+  // número que só tinha a oficial: liga a não oficial nele também (vira híbrido)
+  const abrirConexaoExistente = async (id: string) => {
+    const ok = await conectar('central', undefined, { id });
+    if (ok) setQrPara(id);
+  };
   const abrirConexao = async (escopo: 'central' | 'corretor', corretorId?: string, rotulo?: string) => {
     const id = await conectar(escopo, corretorId, rotulo ? { rotulo } : undefined);
     if (id) setQrPara(id);
   };
 
-  if (!wahaOk) {
+  if (!naoOficialOk) {
     return (
       <div style={{ ...card, marginTop: 14, background: 'var(--bg)' }}>
         <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0, lineHeight: 1.6 }}>
-          A conexão dos números (QR code) fica disponível quando o motor de WhatsApp (WAHA) for
+          A conexão dos números fica disponível quando o WhatsApp não oficial for
           configurado no servidor.
         </p>
       </div>
@@ -631,7 +637,8 @@ function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
         {modo === 'central'
           ? <>
               {centrais.map(s => (
-                <div key={s.id} className="data-row" style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div key={s.id} style={card}>
+                <div className="data-row" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.status === 'conectada' ? 'var(--olive)' : 'var(--muted)' }} />
@@ -643,22 +650,26 @@ function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
                       />
                     </span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-                      {s.status === 'conectada' ? '+' + s.numero : s.status === 'conectando' ? 'aguardando leitura do QR…' : 'não conectado'}
+                      {s.status === 'conectada' ? 'Não oficial: +' + s.numero : s.status === 'conectando' ? 'aguardando leitura do QR…' : s.oficialAtiva ? 'Não oficial desligada (opcional — ligue pra mandar a 1ª mensagem e o follow-up sem modelo pago)' : 'não conectado'}
                     </span>
                   </span>
                   <div className="row-actions" style={{ display: 'flex', gap: 7, flex: 'none' }}>
                     {s.status === 'conectada'
                       ? <button onClick={() => desconectar(s.id)} style={btn}>Desconectar</button>
                       : <>
-                          <button onClick={() => setQrPara(s.id)} style={{ ...btn, background: 'var(--terra)', color: '#fff', border: 'none' }}>Ler QR</button>
+                          <button onClick={() => (s.oficialAtiva ? abrirConexaoExistente(s.id) : setQrPara(s.id))} style={{ ...btn, background: 'var(--terra)', color: '#fff', border: 'none' }}>Ler QR</button>
                           <button onClick={() => desconectar(s.id)} style={btn}>Excluir</button>
                         </>}
                   </div>
                 </div>
+                <OficialDoNumero s={s} />
+                </div>
               ))}
               <button onClick={() => abrirConexao('central', undefined, 'Novo número')} style={{ ...card, textAlign: 'left', border: '1px dashed var(--line)', color: 'var(--muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                + Conectar {centrais.length ? 'outro número' : 'um número'}
+                + Conectar {centrais.length ? 'outro número' : 'um número'} pelo WhatsApp não oficial
               </button>
+              <BotaoConectarOficial rotuloBotao={'+ Conectar ' + (centrais.length ? 'outro número' : 'um número') + ' pela API oficial do WhatsApp'}
+                estilo={{ ...card, textAlign: 'left', border: '1px dashed var(--line)', color: 'var(--muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} />
             </>
           : (corretores.length === 0
               ? <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0 }}>Nenhum corretor cadastrado ainda.</p>

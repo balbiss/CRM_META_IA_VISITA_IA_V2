@@ -10,7 +10,7 @@ import type { Server as SocketServer } from 'socket.io';
 
 /** Carrega o lead e confere que quem está pedindo pode ver essa conversa: precisa ser da mesma
  * imobiliária, e se for corretor, o lead precisa ser dele (mesma régua de leads.ts). */
-async function carregarLeadAutorizado(leadId: string, imobiliariaId: string, role: string, sub: string) {
+export async function carregarLeadAutorizado(leadId: string, imobiliariaId: string, role: string, sub: string) {
   const [lead] = await db.select().from(leads).where(and(eq(leads.id, leadId), eq(leads.imobiliariaId, imobiliariaId))).limit(1);
   if (!lead) return null;
   if (role === 'corretor' && lead.corretorId !== sub) return undefined;
@@ -104,10 +104,17 @@ export function mensagensRouter(io: SocketServer) {
     // dispara pelo WhatsApp (central ou do corretor) sem travar a resposta;
     // se não houver sessão conectada, a mensagem fica só no histórico do CRM.
     despacharPeloWhatsapp({
-      imobiliariaId, telefone: lead.telefone, corretorId: lead.corretorId, sessaoWhatsappId: lead.sessaoWhatsappId,
+      imobiliariaId, leadId: lead.id, telefone: lead.telefone, corretorId: lead.corretorId, sessaoWhatsappId: lead.sessaoWhatsappId,
       texto: parsed.data.texto, anexoUrl: parsed.data.anexoUrl, anexoTipo: parsed.data.anexoTipo, anexoNome: parsed.data.anexoNome,
     })
-      .then(r => { if (!r.enviado && r.erro && r.erro !== 'WAHA não configurado' && r.erro !== 'nenhuma sessão conectada') console.warn('WhatsApp não enviou:', r.erro); })
+      .then(async r => {
+        // grava o id do WhatsApp: o "visto" passa a atualizar e o eco que volta não duplica a mensagem
+        if (r.enviado && r.waMessageId) {
+          const [upd] = await db.update(mensagensWhatsapp).set({ waMessageId: r.waMessageId, waChave: r.waChave ?? null, ackStatus: 2 })
+            .where(eq(mensagensWhatsapp.id, row.id)).returning().catch(() => []);
+          if (upd) io.to('imobiliaria:' + imobiliariaId).emit('mensagem:ack', { id: upd.id, ackStatus: 2 });
+        }
+        if (!r.enviado && r.erro && r.erro !== 'NAO_OFICIAL_INDISPONIVEL' && r.erro !== 'nenhuma sessão conectada') console.warn('WhatsApp não enviou:', r.erro); })
       .catch(() => {});
   });
 

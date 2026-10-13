@@ -289,6 +289,20 @@ export const sessoesWhatsapp = pgTable('sessoes_whatsapp', {
   rotulo: text('rotulo'),
   // O Agente de IA atende neste número? (só vale pra número central; desligado = lead vai direto pra roleta)
   iaAtende: boolean('ia_atende').notNull().default(true),
+  // API oficial (app Conecta Zap, Coexistência) no MESMO número — híbrido: com a janela de 24h
+  // aberta a resposta sai pela oficial; fora dela sai pelo WAHA; WAHA fora → modelo (template).
+  // O token é cifrado em repouso (lib/crypto). `status` acima continua sendo o do WAHA.
+  oficialPhoneNumberId: text('oficial_phone_number_id').unique(),
+  oficialWabaId: text('oficial_waba_id'),
+  oficialNumero: text('oficial_numero'),
+  oficialTokenCifrado: text('oficial_token_cifrado'),
+  oficialTokenIv: text('oficial_token_iv'),
+  oficialTokenTag: text('oficial_token_tag'),
+  oficialAtiva: boolean('oficial_ativa').notNull().default(false),
+  oficialErro: text('oficial_erro'),
+  // Modelo aprovado pra 1ª mensagem quando o WAHA está fora e a janela de 24h fechada ({{1}} = nome).
+  oficialTemplate: text('oficial_template'),
+  oficialTemplateIdioma: text('oficial_template_idioma'),
   criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
 }, table => ({
   imobiliariaIdx: index('sessoes_whatsapp_imobiliaria_id_idx').on(table.imobiliariaId),
@@ -328,6 +342,9 @@ export const mensagensWhatsapp = pgTable('mensagens_whatsapp', {
   direcao: direcaoEnum('direcao').notNull(),
   // id da mensagem no WhatsApp (WAHA) — evita duplicar ao processar o webhook 2x.
   waMessageId: text('wa_message_id'),
+  // ID interno da mensagem no WhatsApp (o mesmo no WAHA e dentro do wamid da API oficial). No
+  // número híbrido a mesma mensagem chega pelos dois lados — esta chave faz só uma entrar.
+  waChave: text('wa_chave'),
   // "visto" do WhatsApp (evento message.ack): 1=enviando, 2=no servidor, 3=entregue, 4=lido, 5=reproduzido.
   ackStatus: integer('ack_status'),
   // Mensagem recebida já foi vista por alguém do CRM? (pro contador de não lidas em Conversas)
@@ -349,6 +366,7 @@ export const mensagensWhatsapp = pgTable('mensagens_whatsapp', {
   leadIdx: index('mensagens_lead_id_idx').on(table.leadId),
   // Trava de duplicidade: o webhook do WAHA pode chegar 2x (retry, múltiplos eventos).
   waMsgIdx: uniqueIndex('mensagens_wa_message_id_uq').on(table.waMessageId).where(sql`${table.waMessageId} is not null`),
+  waChaveIdx: uniqueIndex('mensagens_wa_chave_uq').on(table.leadId, table.waChave).where(sql`${table.waChave} is not null`),
 }));
 
 /** Tarefa / compromisso ligado (ou não) a um lead — pra Agenda e pros lembretes. */

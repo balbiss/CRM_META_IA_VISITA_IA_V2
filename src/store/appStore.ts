@@ -15,7 +15,11 @@ export interface IntegracaoFacebook {
   ativo: boolean; ultimaSyncEm: string | null; ultimoErro: string | null; criadoEm: string; tokenFinal: string;
 }
 export interface IntegracaoFacebookInput { nomeConta: string; pageId: string; formId: string; accessToken: string }
-export interface SessaoWhatsapp { id: string; escopo: 'central' | 'corretor'; corretorId: string | null; status: 'desconectada' | 'conectando' | 'conectada'; numero: string | null; rotulo?: string | null; iaAtende?: boolean }
+export interface SessaoWhatsapp {
+  id: string; escopo: 'central' | 'corretor'; corretorId: string | null; status: 'desconectada' | 'conectando' | 'conectada'; numero: string | null; rotulo?: string | null; iaAtende?: boolean;
+  // API oficial (híbrido com o QR code no mesmo número)
+  oficialAtiva?: boolean; oficialNumero?: string | null; oficialErro?: string | null; oficialTemplate?: string | null; oficialTemplateIdioma?: string | null;
+}
 export interface NumeroCentral { id: string; rotulo: string | null; numero: string | null }
 
 export type RoletaFinalidade = 'venda' | 'locacao' | 'ambos';
@@ -161,7 +165,7 @@ interface AppState {
   sessoesWhatsapp: SessaoWhatsapp[];
   /** Números centrais da imobiliária (id + rótulo) — visível até pro corretor, pra rotular as conversas. */
   numerosCentrais: NumeroCentral[];
-  wahaConfigurado: boolean;
+  naoOficialDisponivel: boolean;
 
   leads: Lead[];
   /** leadId -> corretorId conhecido (pra detectar quando um lead é atribuído a mim). */
@@ -462,7 +466,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   site: null,
   sessoesWhatsapp: [],
   numerosCentrais: [],
-  wahaConfigurado: false,
+  naoOficialDisponivel: false,
 
   colunasRemotas: [],
   perfisRemotos: [],
@@ -530,7 +534,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('nova_token');
     disconnectSocket();
-    set({ token: null, me: null, leads: [], leadsCorretorIds: {}, colunasRemotas: [], perfisRemotos: [], tags: [], kbTag: null, horarioAtendimento: HORARIO_ATENDIMENTO_PADRAO, modoWhatsapp: 'corretor', notificarCorretorWhatsapp: false, integracoesFacebook: [], siteWebhook: { url: null, token: null }, sessoesWhatsapp: [], wahaConfigurado: false, templates: [], imoveis: [], linksUteis: [], treinamentos: [], notificacoes: [], conversas: [], tarefas: [], eventosLead: {}, fluxos: [], execucoesFollowup: [], site: null, roletas: [], rebatidasStatus: null, leadsPendentes: [] });
+    set({ token: null, me: null, leads: [], leadsCorretorIds: {}, colunasRemotas: [], perfisRemotos: [], tags: [], kbTag: null, horarioAtendimento: HORARIO_ATENDIMENTO_PADRAO, modoWhatsapp: 'corretor', notificarCorretorWhatsapp: false, integracoesFacebook: [], siteWebhook: { url: null, token: null }, sessoesWhatsapp: [], naoOficialDisponivel: false, templates: [], imoveis: [], linksUteis: [], treinamentos: [], notificacoes: [], conversas: [], tarefas: [], eventosLead: {}, fluxos: [], execucoesFollowup: [], site: null, roletas: [], rebatidasStatus: null, leadsPendentes: [] });
   },
   hydrateAuth: () => {
     const token = localStorage.getItem('nova_token');
@@ -1140,8 +1144,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const token = get().token;
     if (!token) return;
     try {
-      const r = await apiFetch<{ wahaConfigurado: boolean; sessoes: SessaoWhatsapp[] }>('/api/whatsapp/sessoes', token);
-      set({ wahaConfigurado: r.wahaConfigurado, sessoesWhatsapp: r.sessoes });
+      const r = await apiFetch<{ naoOficialDisponivel: boolean; sessoes: SessaoWhatsapp[] }>('/api/whatsapp/sessoes', token);
+      set({ naoOficialDisponivel: r.naoOficialDisponivel, sessoesWhatsapp: r.sessoes });
     } catch { /* provável corretor sem permissão */ }
   },
   conectarWhatsapp: async (escopo, corretorId, extra) => {

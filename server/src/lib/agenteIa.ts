@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
 import {
@@ -9,7 +9,8 @@ import { isBusinessHoursOpen } from './schedule.js';
 import { registrarEvento } from './eventos.js';
 import { distribuirLead, escolherRoleta } from './roleta.js';
 import { numeroCentralDoLead } from './numeros.js';
-import { enviarImagemResolvida, enviarTextoResolvido, presenca, resolverChatId } from './waha.js';
+import { resolverChatId } from './waha.js';
+import { enviarAoLead, enviarModelo, presencaNoNumero, soPorModelo } from './whatsappOficial.js';
 import { imoveisParaIa, type ImovelSugerido } from './catalogoIa.js';
 import { decifrar } from './crypto.js';
 
@@ -327,7 +328,8 @@ const sessaoCentral = (lead: Lead) => numeroCentralDoLead(lead);
 
 export async function temCentralConectada(imobiliariaId: string) {
   const [s] = await db.select({ id: sessoesWhatsapp.id }).from(sessoesWhatsapp)
-    .where(and(eq(sessoesWhatsapp.imobiliariaId, imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'), eq(sessoesWhatsapp.status, 'conectada'))).limit(1);
+    .where(and(eq(sessoesWhatsapp.imobiliariaId, imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'),
+      or(eq(sessoesWhatsapp.status, 'conectada'), eq(sessoesWhatsapp.oficialAtiva, true)))).limit(1);
   return !!s;
 }
 
@@ -353,13 +355,13 @@ function fichaImovel(im: ImovelSugerido) {
 async function enviarFotoPelaIa(io: SocketServer, lead: Lead, url: string, legenda: string, chatIdPronto?: string) {
   const sessao = await sessaoCentral(lead);
   if (!sessao) throw new Error('nenhum número central conectado');
-  const alvoChat = chatIdPronto || (await resolverChatId(sessao.sessionName, lead.telefone)).chatId;
   const lista = ecos.get(lead.id) || [];
   lista.push({ texto: legenda, ate: Date.now() + 120000 });
   ecos.set(lead.id, lista);
-  const { id } = await enviarImagemResolvida(sessao.sessionName, alvoChat, url, legenda);
+  // janela de 24h aberta → API oficial; senão WAHA (número híbrido)
+  const { id, chave } = await enviarAoLead(sessao, lead, { texto: legenda, anexoUrl: url, anexoTipo: 'imagem' }, { chatIdWaha: chatIdPronto });
   const [row] = await db.insert(mensagensWhatsapp).values({
-    leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, ackStatus: 2, texto: legenda, anexoUrl: url, anexoTipo: 'imagem',
+    leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, waChave: chave, ackStatus: 2, texto: legenda, anexoUrl: url, anexoTipo: 'imagem',
   }).onConflictDoNothing().returning();
   if (row) io.to('imobiliaria:' + lead.imobiliariaId).emit('mensagem:created', row);
 }
@@ -370,9 +372,9 @@ async function enviarPelaIa(io: SocketServer, lead: Lead, texto: string, chatIdP
   const lista = ecos.get(lead.id) || [];
   lista.push({ texto, ate: Date.now() + 120000 });
   ecos.set(lead.id, lista);
-  const { id } = await enviarTextoResolvido(sessao.sessionName, lead.telefone, texto, chatIdPronto);
+  const { id, chave } = await enviarAoLead(sessao, lead, { texto }, { chatIdWaha: chatIdPronto });
   const [row] = await db.insert(mensagensWhatsapp).values({
-    leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, ackStatus: 2, texto,
+    leadId: lead.id, direcao: 'out', canal: 'ia', waMessageId: id, waChave: chave, ackStatus: 2, texto,
   }).onConflictDoNothing().returning();
   if (!lead.sessaoWhatsappId) await db.update(leads).set({ sessaoWhatsappId: sessao.id }).where(eq(leads.id, lead.id));
   if (row) io.to('imobiliaria:' + lead.imobiliariaId).emit('mensagem:created', row);
@@ -495,6 +497,29 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     const { cfg } = conf;
     const perguntas = perguntasDe(cfg);
 
+    // Lead de formulário num número em que SÓ a API oficial está no ar (WAHA caiu) e o cliente nunca
+    // escreveu: a Meta só deixa abrir a conversa com modelo aprovado. Manda o modelo e a IA segue
+    // normalmente quando o cliente responder.
+    if (evento === 'primeiro_contato') {
+      const sessao = await sessaoCentral(lead);
+      if (sessao && await soPorModelo(sessao, leadId)) {
+        try {
+          const { id, texto } = await enviarModelo(sessao, lead);
+          const [row] = await db.insert(mensagensWhatsapp).values({
+            leadId, direcao: 'out', canal: 'ia', waMessageId: id, ackStatus: 2, texto,
+          }).onConflictDoNothing().returning();
+          if (row) io.to('imobiliaria:' + lead.imobiliariaId).emit('mensagem:created', row);
+          registrarEvento(lead.imobiliariaId, leadId, 'ia', 'Primeiro contato pelo modelo da API oficial (' + sessao.oficialTemplate + ')', 'Agente de IA');
+          // conta como turno: o varredor não manda o modelo de novo, e "sem resposta" segue valendo
+          await db.update(leads).set({ iaTurnos: 1, iaUltimaAtividadeEm: new Date() }).where(eq(leads.id, leadId));
+        } catch (e) {
+          await registrarTurno(lead, { entrada: null, resposta: null, campos: {}, decisao: 'passar:erro', erro: 'modelo: ' + (e as Error).message, chaveSaas: false });
+          await passarParaRoleta(io, leadId, 'erro');
+        }
+        return;
+      }
+    }
+
     // Quantas mensagens do cliente a IA "leu" (contadas ANTES de ler o histórico): se aumentar até a
     // hora de enviar, a resposta ficou velha.
     const lidasDoCliente = await mensagensDoCliente(leadId);
@@ -567,18 +592,19 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     };
 
     // Jeito humano: lê a mensagem (visto azul), respira, e fica "digitando…" enquanto a IA pensa.
-    let alvo: { sessao: string; chatId: string } | null = null;
+    // Número híbrido: com o WAHA no ar a presença sai por ele; só com a oficial, sai o "visto + digitando" dela.
+    let alvo: { sessao: NonNullable<Awaited<ReturnType<typeof sessaoCentral>>>; chatId: string | null } | null = null;
     if (cfg.simularDigitacao) {
       const sessao = await sessaoCentral(lead);
       if (sessao) {
-        const rc = await resolverChatId(sessao.sessionName, lead.telefone);
-        if (rc.existe !== false) {
-          alvo = { sessao: sessao.sessionName, chatId: rc.chatId };
+        const rc = sessao.status === 'conectada' ? await resolverChatId(sessao.sessionName, lead.telefone) : null;
+        if (rc?.existe !== false) {
+          alvo = { sessao, chatId: rc?.chatId ?? null };
           if (evento === 'mensagem') {
-            await presenca(alvo.sessao, alvo.chatId, 'visto');
+            await presencaNoNumero(sessao, leadId, alvo.chatId, 'visto');
             await dormir(1200);
           }
-          await presenca(alvo.sessao, alvo.chatId, 'digitando');
+          await presencaNoNumero(sessao, leadId, alvo.chatId, 'digitando');
         }
       }
     }
@@ -592,7 +618,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       try {
         r = await chamarN8n(payload);
       } catch (e2) {
-        if (alvo) { await presenca(alvo.sessao, alvo.chatId, 'parar'); await presenca(alvo.sessao, alvo.chatId, 'offline'); }
+        if (alvo) { await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'parar'); await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'offline'); }
         await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'passar:erro', erro: (e2 as Error).message, chaveSaas: !openaiKey });
         await passarParaRoleta(io, leadId, 'erro');
         return;
@@ -661,11 +687,11 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     try {
       for (let i = 0; i < baloesAntes.length; i++) {
         if (alvo) {
-          if (i > 0) await presenca(alvo.sessao, alvo.chatId, 'digitando');
+          if (i > 0) await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'digitando');
           // no 1º balão desconta o tempo que a IA já passou pensando (o "digitando…" já estava na tela)
           const jaDigitou = i === 0 ? Date.now() - inicioDigitacao : 0;
           await dormir(Math.max(0, tempoDigitacao(baloes[i]) - jaDigitou));
-          await presenca(alvo.sessao, alvo.chatId, 'parar');
+          await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'parar');
         }
         // O cliente mandou mais coisa enquanto a IA pensava/digitava: como uma pessoa faria, joga
         // fora a resposta e refaz considerando tudo (no máx. 2x, pra quem não para de digitar).
@@ -673,7 +699,7 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
           refazer = true;
           break;
         }
-        await enviarPelaIa(io, lead, baloes[i], alvo?.chatId);
+        await enviarPelaIa(io, lead, baloes[i], alvo?.chatId ?? undefined);
         if (i < baloesAntes.length - 1) await dormir(700);
       }
     } catch (e) {
@@ -685,30 +711,30 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
       await registrarTurno(lead, { entrada, resposta: null, campos: {}, decisao: 'refeito', tokens: r.tokens || 0, chaveSaas: !openaiKey });
       return;
     }
-    if (alvo && !baloes.length) await presenca(alvo.sessao, alvo.chatId, 'parar');
+    if (alvo && !baloes.length) await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'parar');
 
     let fotosEnviadas = 0;
     if (imFotos && !erroEnvio) {
       const fotos = imFotos.imagens.slice(0, Math.max(1, cfg.fotosPorImovel));
       for (let i = 0; i < fotos.length; i++) {
         await dormir(i === 0 ? 1200 : 900);
-        try { await enviarFotoPelaIa(io, lead, fotos[i], '📷 ' + (i + 1) + '/' + fotos.length, alvo?.chatId); fotosEnviadas++; } catch (e) {
+        try { await enviarFotoPelaIa(io, lead, fotos[i], '📷 ' + (i + 1) + '/' + fotos.length, alvo?.chatId ?? undefined); fotosEnviadas++; } catch (e) {
           console.error('agente IA foto:', (e as Error).message);
         }
       }
       if (fotosEnviadas) {
         await dormir(1500);
-        await enviarPelaIa(io, lead, fichaImovel(imFotos), alvo?.chatId).catch(e => console.error('agente IA ficha:', (e as Error).message));
+        await enviarPelaIa(io, lead, fichaImovel(imFotos), alvo?.chatId ?? undefined).catch(e => console.error('agente IA ficha:', (e as Error).message));
       }
     }
     // Resto da resposta (normalmente a próxima pergunta) só depois das fotos e da ficha.
     for (const b of (imFotos && !erroEnvio ? baloesDepois : [])) {
       if (alvo) {
-        await presenca(alvo.sessao, alvo.chatId, 'digitando');
+        await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'digitando');
         await dormir(tempoDigitacao(b));
-        await presenca(alvo.sessao, alvo.chatId, 'parar');
+        await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'parar');
       }
-      await enviarPelaIa(io, lead, b, alvo?.chatId).catch(e => console.error('agente IA balão:', (e as Error).message));
+      await enviarPelaIa(io, lead, b, alvo?.chatId ?? undefined).catch(e => console.error('agente IA balão:', (e as Error).message));
     }
     if (imInteresse && lead.imovelInteresseId !== imInteresse.id) {
       const [atualizado] = await db.update(leads).set({ imovelInteresseId: imInteresse.id, imovelTitulo: imInteresse.titulo, imovelSub: imInteresse.local || null })
@@ -717,9 +743,9 @@ async function rodarTurno(io: SocketServer, leadId: string, evento: 'mensagem' |
     }
 
     if ((decisao === 'passar:limite' || encerramentoForcado) && cfg.mensagemPassagem && !erroEnvio) {
-      await enviarPelaIa(io, lead, cfg.mensagemPassagem, alvo?.chatId).catch(() => {});
+      await enviarPelaIa(io, lead, cfg.mensagemPassagem, alvo?.chatId ?? undefined).catch(() => {});
     }
-    if (alvo) await presenca(alvo.sessao, alvo.chatId, 'offline');
+    if (alvo) await presencaNoNumero(alvo.sessao, leadId, alvo.chatId, 'offline');
 
     await db.update(leads).set({
       iaDados: dados, iaTurnos: turnos, iaUltimaAtividadeEm: new Date(),

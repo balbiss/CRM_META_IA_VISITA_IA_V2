@@ -632,6 +632,69 @@ filtrar por essa etiqueta em **Conversas**.
 
 ---
 
+## 14. WhatsApp oficial (API oficial da Meta) no número da imobiliária
+
+**Pra quem:** dono e gerente conectam; corretor só usa no chat.
+**Onde:** Integrações › Números da imobiliária.
+
+O número central pode funcionar de três jeitos:
+
+| Jeito | Como liga | Pra que serve |
+|---|---|---|
+| **Não oficial** | "Conectar pelo WhatsApp não oficial" (lê o QR code no celular) | Manda qualquer mensagem a qualquer hora, sem custo. |
+| **Oficial** | "Conectar pela API oficial do WhatsApp" (login com o Facebook) | Mais estável e sem risco de bloqueio nas respostas. Depois de 24h sem o cliente escrever, só sai **modelo aprovado** (pago à Meta). |
+| **Os dois juntos (recomendado)** | Liga o não oficial e, na mesma linha, "Ligar API oficial" | O CRM escolhe sozinho por onde sai cada mensagem. |
+
+**O número continua no celular.** Não precisa de chip novo: o WhatsApp Business do celular segue
+funcionando normalmente (a Meta chama isso de Coexistência). Exigência: o número precisa estar no
+**WhatsApp Business** (não o WhatsApp comum), atualizado.
+
+### Passo a passo pra ligar a oficial
+1. Integrações › no número (ex.: "Vendas") clique **Ligar API oficial** — ou, pra um número novo,
+   **+ Conectar número pela API oficial do WhatsApp**.
+2. Abre a janela da Meta: entre com o Facebook de quem administra a empresa, escolha o portfólio,
+   digite o número e escaneie o QR que aparece **dentro do WhatsApp Business do celular**.
+3. Pronto: aparece **● API oficial ativa**. Deixe o WhatsApp Business aberto no celular por alguns
+   minutos (a Meta sincroniza os contatos).
+
+### Por onde sai cada mensagem (com os dois ligados)
+- Cliente escreveu nas **últimas 24h** → a resposta (do corretor, da IA, do follow-up) sai pela **oficial**.
+- Passou de 24h → sai pela **não oficial** (de graça, sem modelo).
+- Não oficial desconectada e passou de 24h → só dá pra mandar **modelo** (veja abaixo).
+- Mensagem que o cliente manda chega pelas duas vias, mas aparece **uma vez só** no CRM.
+- O que alguém responder direto pelo celular também aparece na conversa do CRM.
+
+### Modelos de mensagem (templates da Meta)
+Em **Integrações › Modelos** (na linha da API oficial):
+- **Criar modelo:** nome, tipo (Utilidade = resposta a cadastro do cliente, mais barato; Marketing =
+  oferta/novidade), título opcional, mensagem com `{{1}}`, `{{2}}`… nas partes que mudam (ex.: nome),
+  um exemplo pra cada, rodapé e até 3 botões de resposta rápida. Vai pra análise da Meta (minutos a
+  24h) e o status atualiza sozinho: Em análise › Aprovado / Rejeitado (com o motivo).
+- **1ª mensagem automática:** escolha um modelo aprovado (com no máximo `{{1}}`, que vira o primeiro
+  nome do cliente). É usado quando chega lead de formulário e a não oficial está desconectada —
+  o Agente de IA abre a conversa com esse modelo e continua quando o cliente responder.
+  Sem modelo escolhido, o lead vai direto pra roleta.
+- **Apagar:** some da conta do WhatsApp; a Meta não deixa criar outro com o mesmo nome por 30 dias.
+
+### No chat (Conversas e ficha do lead)
+- Se passou de 24h e só a oficial está ligada, aparece a faixa amarela **"Faz mais de 24h que o cliente
+  não escreve…"** com o botão **Enviar modelo**: escolhe o modelo, preenche as partes (o nome já vem
+  preenchido), vê como o cliente vai ler e envia.
+- Com a janela aberta, o link discreto **"Enviar modelo da API oficial"** também fica disponível.
+
+### Desligar
+- **Desligar** (na linha da oficial): o número volta a funcionar só pelo não oficial.
+- **Desconectar** o não oficial num número que tem a oficial: só o não oficial sai; a oficial continua.
+- Se a imobiliária desconectar pelo próprio celular (WhatsApp Business › Configurações › Conta ›
+  Plataforma comercial), o CRM percebe sozinho e mostra o aviso na linha do número.
+
+### Custos
+Mensagens de resposta dentro das 24h não têm custo. **Modelo** é cobrado pela Meta por conversa
+iniciada (Utilidade mais barato que Marketing), na forma de pagamento cadastrada na conta do
+WhatsApp da imobiliária.
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
 
 - **Agente de IA com personalidade diferente por número**: hoje a configuração da IA (prompt,

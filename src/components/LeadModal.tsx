@@ -12,6 +12,7 @@ import { Visto } from './Visto';
 import { ChatAvatar } from './ChatAvatar';
 import { AudioRecordButton } from './AudioRecordButton';
 import { EmojiPicker } from './EmojiPicker';
+import { AvisoJanelaOficial } from './WhatsappOficial';
 
 const TABS: Array<[string, string]> = [
   ['detalhes', 'Detalhes'], ['chat', 'Chat WhatsApp'], ['followup', 'Follow-up'], ['historico', 'Histórico'],
@@ -291,6 +292,7 @@ export function LeadModal() {
                 )}
                 
               </div>
+              <AvisoJanelaOficial leadId={L.id} qtdMensagens={chatMsgs.length} />
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                 {quickTemplates.map(q => (
                   <button key={q.label} onClick={() => setDraft(q.texto)} style={{ padding: '6px 11px', border: '1px solid var(--line)', borderRadius: 20, background: 'none', fontSize: 12 }}>{q.label}</button>

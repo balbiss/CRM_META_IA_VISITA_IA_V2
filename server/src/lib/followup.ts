@@ -254,7 +254,7 @@ export async function varrerFollowups(io: SocketServer): Promise<number> {
 
       const { despacharPeloWhatsapp } = await import('../routes/whatsapp.js');
       const r = await despacharPeloWhatsapp({
-        imobiliariaId: ex.imobiliariaId, telefone: lead.telefone, corretorId: ex.corretorId, sessaoWhatsappId: lead.sessaoWhatsappId,
+        imobiliariaId: ex.imobiliariaId, leadId: lead.id, telefone: lead.telefone, corretorId: ex.corretorId, sessaoWhatsappId: lead.sessaoWhatsappId,
         texto, anexoUrl: passo.anexoUrl, anexoTipo: anexoTipo as 'imagem' | 'audio' | 'documento' | null, anexoNome: passo.anexoNome,
       });
       if (!r.enviado) {
@@ -272,7 +272,8 @@ export async function varrerFollowups(io: SocketServer): Promise<number> {
       }
 
       const [msg] = await db.insert(mensagensWhatsapp).values({
-        leadId: lead.id, direcao: 'out', canal: 'followup', enviadoPor: ex.corretorId, ackStatus: 1,
+        leadId: lead.id, direcao: 'out', canal: 'followup', enviadoPor: ex.corretorId, ackStatus: r.waMessageId ? 2 : 1,
+        waMessageId: r.waMessageId ?? null, waChave: r.waChave ?? null,
         texto: texto ?? null, anexoUrl: passo.anexoUrl ?? null, anexoTipo, anexoNome: passo.anexoNome ?? null,
       }).returning();
       io.to('imobiliaria:' + ex.imobiliariaId).emit('mensagem:created', msg);

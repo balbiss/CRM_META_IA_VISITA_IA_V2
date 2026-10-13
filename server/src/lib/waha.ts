@@ -10,7 +10,7 @@ export const wahaConfigurado = () => !!(base() && key());
 
 type WahaOpts = { method?: string; body?: unknown };
 async function waha<T = unknown>(path: string, opts: WahaOpts = {}): Promise<T> {
-  if (!wahaConfigurado()) throw new Error('WAHA não configurado (defina WAHA_URL e WAHA_API_KEY no server/.env)');
+  if (!wahaConfigurado()) throw new Error('WhatsApp não oficial indisponível (WAHA_URL / WAHA_API_KEY não definidos)');
   const r = await fetch(base() + path, {
     method: opts.method ?? 'GET',
     headers: { 'X-Api-Key': key(), 'Content-Type': 'application/json' },
@@ -19,7 +19,7 @@ async function waha<T = unknown>(path: string, opts: WahaOpts = {}): Promise<T> 
   const txt = await r.text();
   let json: unknown = null;
   try { json = txt ? JSON.parse(txt) : null; } catch { /* resposta não-json */ }
-  if (!r.ok) throw new Error(`WAHA ${path} -> ${r.status} ${txt.slice(0, 200)}`);
+  if (!r.ok) throw new Error(`não oficial ${path} -> ${r.status} ${txt.slice(0, 200)}`);
   return json as T;
 }
 
