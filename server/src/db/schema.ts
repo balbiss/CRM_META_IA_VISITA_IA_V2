@@ -52,6 +52,12 @@ export const imobiliarias = pgTable('imobiliarias', {
   iaLiberada: boolean('ia_liberada').notNull().default(false),
   // true = a IA roda na chave OpenAI do SaaS; false = a imobiliária precisa cadastrar a própria.
   iaUsaChaveSaas: boolean('ia_usa_chave_saas').notNull().default(true),
+  // Assistente de voz (Gemini Live) dentro do CRM: liberado pela plataforma, com cota de minutos
+  // por mês; nome e voz a imobiliária escolhe.
+  assistenteLiberado: boolean('assistente_liberado').notNull().default(false),
+  assistenteMinutosMes: integer('assistente_minutos_mes').notNull().default(60),
+  assistenteNome: text('assistente_nome').notNull().default('Assistente'),
+  assistenteVoz: text('assistente_voz').notNull().default('Charon'),
 
   // --- Gestão da assinatura (painel Dono do SaaS) ---
   status: imobiliariaStatusEnum('status').notNull().default('ativa'),
@@ -711,4 +717,28 @@ export const leadsRelations = relations(leads, ({ one, many }) => ({
 
 export const mensagensRelations = relations(mensagensWhatsapp, ({ one }) => ({
   lead: one(leads, { fields: [mensagensWhatsapp.leadId], references: [leads.id] }),
+}));
+
+/** Uma conversa com o assistente de voz: conta os segundos usados (cota mensal da imobiliária). */
+export const assistenteSessoes = pgTable('assistente_sessoes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  perfilId: uuid('perfil_id').notNull().references(() => perfis.id, { onDelete: 'cascade' }),
+  iniciadaEm: timestamp('iniciada_em', { withTimezone: true }).notNull().defaultNow(),
+  ultimoSinalEm: timestamp('ultimo_sinal_em', { withTimezone: true }).notNull().defaultNow(),
+  segundos: integer('segundos').notNull().default(0),
+  encerrada: boolean('encerrada').notNull().default(false),
+}, table => ({
+  imobIdx: index('assistente_sessoes_imob_idx').on(table.imobiliariaId, table.iniciadaEm),
+}));
+
+/** O que o usuário pediu pro assistente lembrar ("o João só visita sábado"). Cada um vê só as suas. */
+export const assistenteMemorias = pgTable('assistente_memorias', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  imobiliariaId: uuid('imobiliaria_id').notNull().references(() => imobiliarias.id, { onDelete: 'cascade' }),
+  perfilId: uuid('perfil_id').notNull().references(() => perfis.id, { onDelete: 'cascade' }),
+  texto: text('texto').notNull(),
+  criadoEm: timestamp('criado_em', { withTimezone: true }).notNull().defaultNow(),
+}, table => ({
+  perfilIdx: index('assistente_memorias_perfil_idx').on(table.perfilId),
 }));

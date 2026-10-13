@@ -695,6 +695,35 @@ WhatsApp da imobiliária.
 
 ---
 
+## 15. Assistente de voz (fala com o CRM)
+
+**Pra quem:** todos (cada um só enxerga o que já enxerga no CRM — corretor, só os leads dele).
+**Onde:** botão redondo com o nome do assistente no topo da tela, ao lado do sino.
+
+A imobiliária ganha um assistente que **conversa por voz** (ou por texto) e mexe no CRM:
+- **Perguntas:** "quantos leads entraram hoje?", "quais leads meus estão parados há mais de 3 dias?",
+  "o que a Maria falou no WhatsApp?", "quais são minhas tarefas de hoje?", "como está o funil este mês?".
+- **Navegar:** "abre o funil", "abre a conversa da Maria" — a tela vai sozinha.
+- **Fazer (sempre pedindo confirmação):** "cria uma tarefa de ligar pro João amanhã às 10h",
+  "passa a Maria pra Visita agendada", "manda pra ela: o imóvel ainda está disponível". Aparece um
+  cartão **Confirma?** — vale dizer "sim", clicar em **Confirmar** ou fazer **joinha** pra câmera.
+- **Lembrar:** "lembra que o João só visita aos sábados" — depois é só perguntar "o que eu pedi pra
+  lembrar do João?". Cada pessoa tem as suas anotações.
+- **Listas grandes** aparecem num painel na tela (dá pra arrastar e fechar).
+
+**Gestos pela câmera (opcional, botão ✋):** o dedo indicador vira um cursor; **pinça** (polegar +
+indicador) arrasta painéis e, rápida, clica; **punho fechado** fecha o painel; **✌** liga/desliga o
+microfone; **joinha** confirma. Tudo roda no computador — nenhuma imagem da câmera sai dele.
+
+**Nome e voz:** dono/gerente trocam na engrenagem ⚙ do assistente (ex.: "Íris", "Duda").
+
+**Minutos:** cada imobiliária tem uma cota de minutos de conversa por mês (definida pelo
+administrador do CRM). O assistente mostra quanto falta; quando acaba, avisa e fecha.
+
+**Requisitos:** navegador Chrome/Edge atualizado, permissão de microfone (e de câmera, se usar gestos).
+
+---
+
 ## Pendências (ainda não existem — não prometer ao cliente)
 
 - **Agente de IA com personalidade diferente por número**: hoje a configuração da IA (prompt,

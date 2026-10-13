@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { and, eq, sql, desc, inArray, gte } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { imobiliarias, perfis, leads, colunasKanban, pagamentos, adminsPlataforma, sessoesWhatsapp, iaTurnos } from '../db/schema.js';
+import { imobiliarias, perfis, leads, colunasKanban, pagamentos, adminsPlataforma, sessoesWhatsapp, iaTurnos, assistenteSessoes } from '../db/schema.js';
 import { signPlatformToken } from '../lib/jwt.js';
 import { requirePlataforma } from '../middleware/plataforma.js';
 import { pararSessao, wahaConfigurado } from '../lib/waha.js';
@@ -134,6 +134,8 @@ plataformaRouter.get('/imobiliarias', async (_req, res) => {
     criadoEm: i.criadoEm,
     iaLiberada: i.iaLiberada,
     iaUsaChaveSaas: i.iaUsaChaveSaas,
+    assistenteLiberado: i.assistenteLiberado,
+    assistenteMinutosMes: i.assistenteMinutosMes,
     iaMes: iaMes.get(i.id) ?? { atendimentos: 0, turnos: 0, tokensSaas: 0 },
   })));
 });
@@ -204,6 +206,15 @@ plataformaRouter.post('/imobiliarias', async (req, res) => {
 
 // --- detalhe ---
 
+/** Minutos do assistente de voz usados no mês corrente (horário de Brasília). */
+async function minutosAssistenteNoMes(imobiliariaId: string) {
+  const agoraBr = new Date(Date.now() - 3 * 3600 * 1000);
+  const inicio = new Date(Date.UTC(agoraBr.getUTCFullYear(), agoraBr.getUTCMonth(), 1, 3));
+  const [r] = await db.select({ s: sql<number>`coalesce(sum(${assistenteSessoes.segundos}), 0)::int` }).from(assistenteSessoes)
+    .where(and(eq(assistenteSessoes.imobiliariaId, imobiliariaId), gte(assistenteSessoes.iniciadaEm, inicio)));
+  return Math.ceil((r?.s ?? 0) / 60);
+}
+
 plataformaRouter.get('/imobiliarias/:id', async (req, res) => {
   const [imob] = await db.select().from(imobiliarias).where(eq(imobiliarias.id, req.params.id)).limit(1);
   if (!imob) return res.status(404).json({ error: 'Imobiliária não encontrada' });
@@ -228,6 +239,9 @@ plataformaRouter.get('/imobiliarias/:id', async (req, res) => {
     criadoEm: imob.criadoEm,
     iaLiberada: imob.iaLiberada,
     iaUsaChaveSaas: imob.iaUsaChaveSaas,
+    assistenteLiberado: imob.assistenteLiberado,
+    assistenteMinutosMes: imob.assistenteMinutosMes,
+    assistenteMinutosUsados: await minutosAssistenteNoMes(imob.id),
     iaMes: (await consumoIaMes([imob.id])).get(imob.id) ?? { atendimentos: 0, turnos: 0, tokensSaas: 0 },
     equipe,
     corretores: equipe.filter(e => e.role === 'corretor').length,
@@ -251,6 +265,8 @@ const editarSchema = z.object({
   observacoes: z.string().nullable().optional(),
   iaLiberada: z.boolean().optional(),
   iaUsaChaveSaas: z.boolean().optional(),
+  assistenteLiberado: z.boolean().optional(),
+  assistenteMinutosMes: z.number().int().min(0).max(100000).optional(),
 });
 
 plataformaRouter.patch('/imobiliarias/:id', async (req, res) => {
@@ -270,9 +286,11 @@ plataformaRouter.patch('/imobiliarias/:id', async (req, res) => {
   if (p.observacoes !== undefined) patch.observacoes = p.observacoes;
   if (p.iaLiberada !== undefined) patch.iaLiberada = p.iaLiberada;
   if (p.iaUsaChaveSaas !== undefined) patch.iaUsaChaveSaas = p.iaUsaChaveSaas;
+  if (p.assistenteLiberado !== undefined) patch.assistenteLiberado = p.assistenteLiberado;
+  if (p.assistenteMinutosMes !== undefined) patch.assistenteMinutosMes = p.assistenteMinutosMes;
 
   const [row] = await db.update(imobiliarias).set(patch).where(eq(imobiliarias.id, req.params.id)).returning();
-  res.json({ id: row.id, nome: row.nome, plano: row.plano, mensalidade: Number(row.mensalidade), limiteCorretores: row.limiteCorretores, diasCarencia: row.diasCarencia, proximoVencimento: row.proximoVencimento, observacoes: row.observacoes, iaLiberada: row.iaLiberada, iaUsaChaveSaas: row.iaUsaChaveSaas });
+  res.json({ id: row.id, nome: row.nome, plano: row.plano, mensalidade: Number(row.mensalidade), limiteCorretores: row.limiteCorretores, diasCarencia: row.diasCarencia, proximoVencimento: row.proximoVencimento, observacoes: row.observacoes, iaLiberada: row.iaLiberada, iaUsaChaveSaas: row.iaUsaChaveSaas, assistenteLiberado: row.assistenteLiberado, assistenteMinutosMes: row.assistenteMinutosMes });
 });
 
 // --- bloquear / liberar (manual) ---

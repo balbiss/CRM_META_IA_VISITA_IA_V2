@@ -65,7 +65,8 @@ export function mensagensRouter(io: SocketServer) {
       .where(eq(mensagensWhatsapp.leadId, req.params.leadId))
       .orderBy(asc(mensagensWhatsapp.enviadoEm));
 
-    // abrir a conversa marca as recebidas como lidas
+    // abrir a conversa marca as recebidas como lidas (o assistente de voz só consulta: ?consulta=1)
+    if (req.query.consulta === '1') return res.json(rows);
     await db.update(mensagensWhatsapp)
       .set({ lida: true })
       .where(and(eq(mensagensWhatsapp.leadId, req.params.leadId), eq(mensagensWhatsapp.direcao, 'in'), eq(mensagensWhatsapp.lida, false)));

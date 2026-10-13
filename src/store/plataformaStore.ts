@@ -25,6 +25,9 @@ export interface ImobiliariaRow {
   criadoEm: string;
   iaLiberada: boolean;
   iaUsaChaveSaas: boolean;
+  assistenteLiberado: boolean;
+  assistenteMinutosMes: number;
+  assistenteMinutosUsados: number;
   iaMes: { atendimentos: number; turnos: number; tokensSaas: number };
 }
 
@@ -80,7 +83,7 @@ interface PlataformaState {
   carregar: () => Promise<void>;
   criarImobiliaria: (input: NovaImobiliariaInput) => Promise<{ nome: string; email: string; senhaTemporaria: string }>;
   detalhe: (id: string) => Promise<ImobiliariaDetalhe>;
-  editar: (id: string, patch: Partial<NovaImobiliariaInput> & { proximoVencimento?: string | null; observacoes?: string | null; iaLiberada?: boolean; iaUsaChaveSaas?: boolean }) => Promise<void>;
+  editar: (id: string, patch: Partial<NovaImobiliariaInput> & { proximoVencimento?: string | null; observacoes?: string | null; iaLiberada?: boolean; iaUsaChaveSaas?: boolean; assistenteLiberado?: boolean; assistenteMinutosMes?: number }) => Promise<void>;
   bloquear: (id: string) => Promise<void>;
   liberar: (id: string) => Promise<void>;
   excluir: (id: string, confirmarNome: string) => Promise<void>;
