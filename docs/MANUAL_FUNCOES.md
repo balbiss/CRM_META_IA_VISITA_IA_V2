@@ -532,7 +532,7 @@ Tudo na tela muda junto.
 ## 11. Conectar com Facebook (leads dos anúncios em tempo real)
 
 **Pra quem:** Dono e Gerente.
-**Onde:** menu **Integrações** → seção **Captação de leads do Facebook** → botão azul
+**Onde:** menu **Integrações** → aba **Facebook Lead Ads** → botão azul
 **Conectar com Facebook**.
 
 ### Passo a passo
@@ -635,7 +635,7 @@ filtrar por essa etiqueta em **Conversas**.
 ## 14. WhatsApp oficial (API oficial da Meta) no número da imobiliária
 
 **Pra quem:** dono e gerente conectam; corretor só usa no chat.
-**Onde:** Integrações › Números da imobiliária.
+**Onde:** Integrações › aba **WhatsApp** › Números da imobiliária.
 
 O número central pode funcionar de três jeitos:
 
@@ -665,7 +665,7 @@ funcionando normalmente (a Meta chama isso de Coexistência). Exigência: o núm
 - O que alguém responder direto pelo celular também aparece na conversa do CRM.
 
 ### Modelos de mensagem (templates da Meta)
-Em **Integrações › Modelos** (na linha da API oficial):
+Em **Integrações › WhatsApp › Modelos** (na linha da API oficial):
 - **Criar modelo:** nome, tipo (Utilidade = resposta a cadastro do cliente, mais barato; Marketing =
   oferta/novidade), título opcional, mensagem com `{{1}}`, `{{2}}`… nas partes que mudam (ex.: nome),
   um exemplo pra cada, rodapé e até 3 botões de resposta rápida. Vai pra análise da Meta (minutos a

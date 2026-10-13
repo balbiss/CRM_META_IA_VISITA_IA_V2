@@ -129,8 +129,7 @@ export function OficialDoNumero({ s }: { s: SessaoWhatsapp }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--line)', flexWrap: 'wrap' }}>
       <span style={{ flex: 1, minWidth: 200, fontSize: 12, lineHeight: 1.5 }}>
-        <b style={{ color: 'var(--olive)' }}>● API oficial ativa</b>
-        {s.oficialNumero ? <span style={{ color: 'var(--muted)' }}> · +{s.oficialNumero}</span> : null}
+        <b>API oficial</b>{s.oficialNumero ? <span style={{ color: 'var(--muted)' }}> · +{s.oficialNumero}</span> : null}
         <span style={{ display: 'block', color: 'var(--muted)' }}>
           {s.status === 'conectada' ? 'Oficial + não oficial juntos: se o cliente escreveu nas últimas 24h, responde pela oficial; senão, pela não oficial.' : 'Não oficial desconectada: depois de 24h sem o cliente escrever, só sai modelo aprovado.'}
           {' '}1ª mensagem por modelo: <b>{s.oficialTemplate || 'nenhum escolhido'}</b>

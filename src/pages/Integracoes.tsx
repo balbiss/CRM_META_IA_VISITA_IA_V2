@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAppStore, type IntegracaoFacebook, type ModoWhatsapp } from '../store/appStore';
 import { useRoleInfo } from '../lib/selectors';
 import { BotaoConectarOficial, OficialDoNumero } from '../components/WhatsappOficial';
+import { IconeFacebook, IconeSite, IconeWhatsapp } from '../components/IconesMarca';
 
 const secTitle: React.CSSProperties = { fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--muted)', margin: '0 0 4px' };
 const card: React.CSSProperties = { border: '1px solid var(--line)', borderRadius: 12, background: 'var(--card)', padding: 20 };
@@ -38,6 +39,17 @@ export default function Integracoes() {
   const [selFb, setSelFb] = useState<string | null>(null);
 
   useEffect(() => { fetchIntegracoes(); }, [fetchIntegracoes]);
+  const sessoes = useAppStore(s => s.sessoesWhatsapp);
+  const fetchSessoes = useAppStore(s => s.fetchSessoesWhatsapp);
+  const siteUrl = useAppStore(s => s.siteWebhook.url);
+  useEffect(() => { if (isManager) fetchSessoes(); }, [isManager, fetchSessoes]);
+  // Aba aberta: a volta do login do Facebook abre direto a aba dele; senão, a última usada.
+  const [aba, setAba] = useState<Aba>(() => {
+    if (new URLSearchParams(window.location.search).get('facebook')) return 'facebook';
+    try { const a = localStorage.getItem('integracoes_aba'); if (a === 'whatsapp' || a === 'facebook' || a === 'site') return a; } catch { /* sem storage */ }
+    return 'whatsapp';
+  });
+  const trocarAba = (a: Aba) => { setAba(a); try { localStorage.setItem('integracoes_aba', a); } catch { /* sem storage */ } };
 
   const mostrarResultadoFb = (r: Record<string, string>) => {
     const fb = r.facebook;
@@ -72,167 +84,202 @@ export default function Integracoes() {
     setTestando(null);
   };
 
+  const centrais = sessoes.filter(s => s.escopo === 'central');
+  const noAr = sessoes.filter(s => s.status === 'conectada' || s.oficialAtiva).length;
+  const comOficial = sessoes.filter(s => s.oficialAtiva).length;
+  const fbAtivas = conexoes.filter(c => c.ativo).length;
+  const fbComErro = conexoes.some(c => c.ativo && c.ultimoErro);
+  const resumoWa = modo === 'central'
+    ? (centrais.length ? `${noAr} de ${centrais.length} número${centrais.length > 1 ? 's' : ''} no ar${comOficial ? ` · ${comOficial} oficial` : ''}` : 'Nenhum número conectado')
+    : `${sessoes.filter(s => s.escopo === 'corretor' && s.status === 'conectada').length} corretor(es) conectado(s)`;
+  const ABAS: { id: Aba; nome: string; icone: React.ReactNode; resumo: string; ok: boolean | null }[] = [
+    { id: 'whatsapp', nome: 'WhatsApp', icone: <IconeWhatsapp size={22} />, resumo: resumoWa, ok: noAr > 0 ? true : sessoes.length ? false : null },
+    { id: 'facebook', nome: 'Facebook Lead Ads', icone: <IconeFacebook size={22} />, resumo: conexoes.length ? `${fbAtivas} página${fbAtivas === 1 ? '' : 's'} recebendo leads` : 'Nenhuma página conectada', ok: conexoes.length ? !fbComErro && fbAtivas > 0 : null },
+    { id: 'site', nome: 'Formulário do site', icone: <IconeSite size={21} />, resumo: siteUrl ? 'Link pronto pra usar' : 'Gerando link…', ok: siteUrl ? true : null },
+  ];
+
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 18 }}>
         <p style={secTitle}>Integrações</p>
-        <h1 style={{ fontFamily: 'Newsreader,serif', fontWeight: 400, fontSize: 24, margin: 0, lineHeight: 1.2 }}>Integrações da imobiliária</h1>
+        <h1 style={{ fontFamily: 'Newsreader,serif', fontWeight: 400, fontSize: 24, margin: 0, lineHeight: 1.2 }}>Canais da imobiliária</h1>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '6px 0 0', lineHeight: 1.6 }}>Por onde os leads chegam e por onde a sua equipe conversa com eles.</p>
       </div>
 
-      {/* ---- Modo de WhatsApp ---- */}
-      <section style={{ marginBottom: 26 }}>
-        <p style={secTitle}>Atendimento no WhatsApp</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 12, marginTop: 8 }}>
-          {MODOS.map(m => {
-            const ativo = modo === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                disabled={!isManager}
-                onClick={() => isManager && setModo(m.id)}
-                style={{
-                  ...card, textAlign: 'left', cursor: isManager ? 'pointer' : 'default',
-                  borderColor: ativo ? 'var(--terra)' : 'var(--line)',
-                  boxShadow: ativo ? '0 0 0 3px var(--terraSoft)' : 'none',
-                  opacity: isManager || ativo ? 1 : 0.6,
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
-                  <span style={{ width: 15, height: 15, borderRadius: '50%', border: '2px solid ' + (ativo ? 'var(--terra)' : 'var(--line)'), display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                    {ativo && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--terra)' }} />}
-                  </span>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>{m.nome}</span>
+      {/* ---- Resumo dos canais (também são as abas) ---- */}
+      <div role="tablist" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10, marginBottom: 22 }}>
+        {ABAS.map(a => {
+          const ativa = aba === a.id;
+          return (
+            <button key={a.id} role="tab" aria-selected={ativa} onClick={() => trocarAba(a.id)}
+              style={{
+                ...card, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer',
+                borderColor: ativa ? 'var(--terra)' : 'var(--line)', boxShadow: ativa ? '0 0 0 3px var(--terraSoft)' : 'none',
+              }}>
+              <span style={{ width: 42, height: 42, borderRadius: 11, background: 'var(--bg)', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>{a.icone}</span>
+              <span style={{ minWidth: 0, flex: 1 }}>
+                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{a.nome}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', flex: 'none', background: a.ok === null ? 'var(--line)' : a.ok ? 'var(--olive)' : 'var(--terra)' }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.resumo}</span>
                 </span>
-                <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6 }}>{m.desc}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 12, padding: '11px 13px', border: '1px solid var(--line)', borderRadius: 9, background: 'var(--bg)' }}>
-          <span style={{ color: 'var(--olive)', fontWeight: 700, flex: 'none' }}>✓</span>
-          <p style={{ fontSize: 12.5, color: 'var(--ink)', margin: 0, lineHeight: 1.6 }}>
-            <strong>Nos dois modos</strong>, Dono e Gerente veem todas as conversas em <strong>Conversas</strong>,
-            com filtro por corretor. A diferença é só por onde a mensagem sai.
-          </p>
-        </div>
-        {!isManager && <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 2px 0' }}>Só Dono ou Gerente altera o modo de atendimento.</p>}
-
-        {isManager && modo === 'central' && (
-          <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 12, padding: '11px 13px', border: '1px solid var(--line)', borderRadius: 9, background: 'var(--card)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={notificarCorretor} onChange={e => setNotificarCorretor(e.target.checked)} style={{ marginTop: 2 }} />
-            <span>
-              <span style={{ fontSize: 13.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Avisar o corretor por WhatsApp (celular pessoal), sem passar pelo CRM</span>
-              <span style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6, display: 'block' }}>
-                Quando a roleta atribui um lead, o CRM manda os dados dele (nome, WhatsApp, e-mail, campanha) pelo número
-                central pro celular do corretor — que assume o atendimento pelo próprio número. Com isso: a roleta passa
-                a distribuir a qualquer horário, ignorando se o corretor está "em plantão"; e o popup de Aceitar/Recusar
-                dentro do CRM fica desligado (a atribuição já é definitiva).
               </span>
-            </span>
-          </label>
-        )}
+            </button>
+          );
+        })}
+      </div>
 
-        {isManager && <ConexaoWhatsapp modo={modo} />}
-      </section>
-
-      {/* ---- Facebook Lead Ads ---- */}
-      <section>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
-          <div>
-            <p style={secTitle}>Captação de leads do Facebook</p>
-            <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '4px 0 0', maxWidth: 560, lineHeight: 1.6 }}>
-              Clique em "Conectar com Facebook", entre com a conta que administra a página da imobiliária e marque a página.
-              Todo lead de qualquer formulário dessa página cai na hora na coluna "Lead Novo", só aqui na sua imobiliária.
-            </p>
-          </div>
-          {isManager && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flex: 'none' }}>
-              <button
-                onClick={async () => { setConectando(true); await conectarFacebook(); setConectando(false); }}
-                disabled={conectando}
-                style={{ padding: '9px 16px', border: 'none', borderRadius: 8, background: '#1877F2', color: '#fff', fontSize: 13, fontWeight: 600 }}
-              >
-                {conectando ? 'Abrindo o Facebook…' : 'Conectar com Facebook'}
-              </button>
-              <button onClick={() => { setEditando(null); setModalAberto(true); }} style={{ ...btn, padding: '9px 14px', fontSize: 13 }}>
-                + Conexão manual
-              </button>
+      {/* ---- WhatsApp ---- */}
+      {aba === 'whatsapp' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Bloco titulo="Como sua equipe atende" desc="Escolha por onde as conversas com os clientes acontecem. Dono e Gerente veem todas as conversas em Conversas nos dois modos — muda só por onde a mensagem sai.">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 10 }}>
+              {MODOS.map(m => {
+                const ativo = modo === m.id;
+                return (
+                  <button key={m.id} type="button" onClick={() => setModo(m.id)}
+                    style={{ border: '1px solid ' + (ativo ? 'var(--terra)' : 'var(--line)'), borderRadius: 10, background: ativo ? 'var(--terraSoft)' : 'var(--card)', padding: 14, textAlign: 'left', cursor: 'pointer' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
+                      <span style={{ width: 15, height: 15, borderRadius: '50%', border: '2px solid ' + (ativo ? 'var(--terra)' : 'var(--line)'), display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                        {ativo && <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--terra)' }} />}
+                      </span>
+                      <span style={{ fontSize: 13.5, fontWeight: 700 }}>{m.nome}</span>
+                    </span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.55 }}>{m.desc}</span>
+                  </button>
+                );
+              })}
             </div>
+          </Bloco>
+
+          <Bloco titulo={modo === 'central' ? 'Números da imobiliária' : 'Números dos corretores'}
+            desc={modo === 'central' ? 'Conecte pelo WhatsApp não oficial (QR code), pela API oficial ou pelos dois no mesmo número — o CRM escolhe sozinho por onde cada mensagem sai.' : 'Cada corretor conecta o próprio WhatsApp lendo o QR code.'}>
+            <ConexaoWhatsapp modo={modo} />
+          </Bloco>
+
+          {modo === 'central' && (
+            <Bloco titulo="Aviso ao corretor">
+              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+                <input type="checkbox" checked={notificarCorretor} onChange={e => setNotificarCorretor(e.target.checked)} style={{ marginTop: 3 }} />
+                <span>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Avisar o corretor no WhatsApp pessoal, sem passar pelo CRM</span>
+                  <span style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.6, display: 'block' }}>
+                    Quando a roleta entrega um lead, o número central manda os dados dele (nome, WhatsApp, e-mail, campanha) pro celular
+                    do corretor, que atende pelo próprio número. Com isso a roleta distribui a qualquer horário (ignora o "em plantão")
+                    e o Aceitar/Recusar do CRM fica desligado.
+                  </span>
+                </span>
+              </label>
+            </Bloco>
           )}
         </div>
+      )}
 
-        {retornoFb && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', margin: '0 0 12px', padding: '11px 13px', borderRadius: 9, border: '1px solid ' + (retornoFb.ok ? 'var(--olive)' : 'var(--terra)'), background: retornoFb.ok ? 'var(--oliveSoft)' : 'var(--bg)' }}>
-            <span style={{ fontWeight: 700, flex: 'none', color: retornoFb.ok ? 'var(--olive)' : 'var(--terra)' }}>{retornoFb.ok ? '✓' : '⚠'}</span>
-            <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.6, flex: 1 }}>{retornoFb.msg}</p>
-            <button onClick={() => setRetornoFb(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 15, flex: 'none' }} aria-label="Fechar">×</button>
-          </div>
-        )}
+      {/* ---- Facebook Lead Ads ---- */}
+      {aba === 'facebook' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Bloco titulo="Leads dos anúncios do Facebook e Instagram"
+            desc='Entre com a conta que administra a página da imobiliária e marque a página. Todo lead de qualquer formulário dela cai na hora em "Lead Novo", só aqui na sua imobiliária.'
+            acao={
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={async () => { setConectando(true); await conectarFacebook(); setConectando(false); }} disabled={conectando}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', border: 'none', borderRadius: 8, background: '#1877F2', color: '#fff', fontSize: 13, fontWeight: 600 }}>
+                  <IconeFacebook size={16} color="#fff" />{conectando ? 'Abrindo o Facebook…' : 'Conectar com Facebook'}
+                </button>
+                <button onClick={() => { setEditando(null); setModalAberto(true); }} style={{ ...btn, padding: '9px 14px', fontSize: 13 }}>+ Conexão manual</button>
+              </div>
+            }>
+            {retornoFb && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', margin: '0 0 12px', padding: '11px 13px', borderRadius: 9, border: '1px solid ' + (retornoFb.ok ? 'var(--olive)' : 'var(--terra)'), background: retornoFb.ok ? 'var(--oliveSoft)' : 'var(--bg)' }}>
+                <span style={{ fontWeight: 700, flex: 'none', color: retornoFb.ok ? 'var(--olive)' : 'var(--terra)' }}>{retornoFb.ok ? '✓' : '⚠'}</span>
+                <p style={{ fontSize: 12.5, margin: 0, lineHeight: 1.6, flex: 1 }}>{retornoFb.msg}</p>
+                <button onClick={() => setRetornoFb(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 15, flex: 'none' }} aria-label="Fechar">×</button>
+              </div>
+            )}
+            {conexoes.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '28px 16px', border: '1px dashed var(--line)', borderRadius: 10 }}>
+                <IconeFacebook size={30} style={{ opacity: 0.5 }} />
+                <p style={{ fontSize: 13.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.6 }}>
+                  Nenhuma página conectada ainda.<br />Clique em "Conectar com Facebook" pra começar a receber os leads.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {conexoes.map(c => {
+                  const r = resultado[c.id];
+                  // status: resultado do teste manual tem prioridade sobre o último erro salvo
+                  const statusOk = r ? r.ok : !c.ultimoErro;
+                  const statusMsg = r ? r.msg : (c.ultimoErro ? c.ultimoErro : (c.ultimaSyncEm ? 'Última captação OK' : 'Ainda não testada'));
+                  return (
+                    <div key={c.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+                        <IconeFacebook size={18} />
+                        <span style={{ fontSize: 14.5, fontWeight: 700 }}>{c.nomeConta}</span>
+                        <Selo cor={c.ativo ? 'ok' : 'neutro'}>{c.ativo ? 'Ativa' : 'Pausada'}</Selo>
+                        <Selo cor="neutro">{c.origem === 'oauth' ? 'Tempo real' : 'Manual'}</Selo>
+                      </div>
+                      <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 9, fontSize: 12.5 }}>
+                        <Campo rotulo="ID da página" valor={c.pageId} mono />
+                        <Campo rotulo="Formulários" valor={c.formId || 'Todos os formulários da página'} mono={!!c.formId} />
+                        {c.origem !== 'oauth' && <Campo rotulo="Token" valor={c.tokenFinal} mono />}
+                        <Campo rotulo="Última captação" valor={fmtData(c.ultimaSyncEm)} />
+                        <dt style={dtStyle}>Situação</dt>
+                        <dd style={{ margin: 0, display: 'flex', alignItems: 'flex-start', gap: 6, color: statusOk ? 'var(--olive)' : 'var(--terra)', fontWeight: 600 }}>
+                          <span style={{ flex: 'none', marginTop: 1 }}>{statusOk ? '✓' : '⚠'}</span>
+                          <span style={{ minWidth: 0, wordBreak: 'break-word', fontWeight: 500 }}>{statusMsg}</span>
+                        </dd>
+                      </dl>
+                      <div className="row-actions" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+                        <button onClick={() => rodarTeste(c.id)} disabled={testando === c.id} style={btn}>{testando === c.id ? 'Testando…' : 'Testar conexão'}</button>
+                        <button onClick={() => atualizar(c.id, { ativo: !c.ativo })} style={btn}>{c.ativo ? 'Pausar' : 'Ativar'}</button>
+                        {c.origem !== 'oauth' && <button onClick={() => { setEditando(c); setModalAberto(true); }} style={btn}>Editar</button>}
+                        <button
+                          onClick={() => ask('Remover conexão "' + c.nomeConta + '"?', c.origem === 'oauth' ? 'Os leads dessa página param de chegar no CRM.' : 'A captação de leads desse formulário para de funcionar.', 'Remover', () => excluir(c.id))}
+                          style={{ ...btn, color: 'var(--terra)' }}
+                        >Excluir</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Bloco>
+          <GuiaFacebook />
+        </div>
+      )}
 
-        {isManager && <GuiaFacebook />}
-
-        {!isManager ? (
-          <div style={card}><p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Só Dono ou Gerente configura as integrações.</p></div>
-        ) : conexoes.length === 0 ? (
-          <div style={{ ...card, textAlign: 'center', padding: '36px 20px' }}>
-            <p style={{ fontSize: 13.5, color: 'var(--muted)', margin: 0, lineHeight: 1.6 }}>
-              Nenhuma página conectada ainda.<br />Clique em "Conectar com Facebook" pra começar a receber os leads.
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {conexoes.map(c => {
-              const r = resultado[c.id];
-              // status: resultado do teste manual tem prioridade sobre o último erro salvo
-              const statusOk = r ? r.ok : !c.ultimoErro;
-              const statusMsg = r ? r.msg : (c.ultimoErro ? c.ultimoErro : (c.ultimaSyncEm ? 'Última captação OK' : 'Ainda não testada'));
-              return (
-                <div key={c.id} style={card}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14.5, fontWeight: 700 }}>{c.nomeConta}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: c.ativo ? 'var(--oliveSoft)' : 'var(--line)', color: c.ativo ? 'var(--olive)' : 'var(--muted)' }}>
-                      {c.ativo ? 'Ativa' : 'Pausada'}
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--muted)' }}>
-                      {c.origem === 'oauth' ? 'Login do Facebook · tempo real' : 'Manual'}
-                    </span>
-                  </div>
-
-                  <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 18, rowGap: 9, fontSize: 12.5 }}>
-                    <Campo rotulo="ID da página" valor={c.pageId} mono />
-                    <Campo rotulo="Formulários" valor={c.formId || 'Todos os formulários da página'} mono={!!c.formId} />
-                    {c.origem !== 'oauth' && <Campo rotulo="Token" valor={c.tokenFinal} mono />}
-                    <Campo rotulo="Última captação" valor={fmtData(c.ultimaSyncEm)} />
-                    <dt style={dtStyle}>Situação</dt>
-                    <dd style={{ margin: 0, display: 'flex', alignItems: 'flex-start', gap: 6, color: statusOk ? 'var(--olive)' : 'var(--terra)', fontWeight: 600 }}>
-                      <span style={{ flex: 'none', marginTop: 1 }}>{statusOk ? '✓' : '⚠'}</span>
-                      <span style={{ minWidth: 0, wordBreak: 'break-word', fontWeight: 500 }}>{statusMsg}</span>
-                    </dd>
-                  </dl>
-
-                  <div className="row-actions" style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
-                    <button onClick={() => rodarTeste(c.id)} disabled={testando === c.id} style={btn}>{testando === c.id ? 'Testando…' : 'Testar conexão'}</button>
-                    <button onClick={() => atualizar(c.id, { ativo: !c.ativo })} style={btn}>{c.ativo ? 'Pausar' : 'Ativar'}</button>
-                    {c.origem !== 'oauth' && <button onClick={() => { setEditando(c); setModalAberto(true); }} style={btn}>Editar</button>}
-                    <button
-                      onClick={() => ask('Remover conexão "' + c.nomeConta + '"?', c.origem === 'oauth' ? 'Os leads dessa página param de chegar no CRM.' : 'A captação de leads desse formulário para de funcionar.', 'Remover', () => excluir(c.id))}
-                      style={{ ...btn, color: 'var(--terra)' }}
-                    >Excluir</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {isManager && <FormularioDoSite />}
+      {/* ---- Formulário do site ---- */}
+      {aba === 'site' && <FormularioDoSite />}
 
       {modalAberto && <ConexaoModal conexao={editando} onClose={() => setModalAberto(false)} />}
       {selFb && <EscolherPaginas sel={selFb} onFim={r => { setSelFb(null); if (r) mostrarResultadoFb(r); }} />}
     </div>
   );
+}
+
+type Aba = 'whatsapp' | 'facebook' | 'site';
+
+/** Bloco com título, explicação curta e (opcional) botões à direita. */
+function Bloco({ titulo, desc, acao, children }: { titulo: string; desc?: string; acao?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section style={card}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{titulo}</h2>
+          {desc && <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '4px 0 0', lineHeight: 1.6, maxWidth: 680 }}>{desc}</p>}
+        </div>
+        {acao && <div style={{ flex: 'none' }}>{acao}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function Selo({ cor, children }: { cor: 'ok' | 'alerta' | 'neutro'; children: React.ReactNode }) {
+  const st = cor === 'ok' ? { background: 'var(--oliveSoft)', color: 'var(--olive)' }
+    : cor === 'alerta' ? { background: 'var(--terraSoft)', color: 'var(--terra)' }
+    : { background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--line)' };
+  return <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap', ...st }}>{children}</span>;
 }
 
 function FormularioDoSite() {
@@ -264,14 +311,9 @@ Se a resposta for 201, mostre uma tela de sucesso ("Recebemos seu contato, em br
 Não use nenhuma biblioteca de backend — é só o fetch direto no submit.`;
 
   return (
-    <section>
-      <p style={secTitle}>Formulário do seu site / landing page</p>
-      <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '4px 0 12px', maxWidth: 620, lineHeight: 1.6 }}>
-        Um link exclusivo da sua imobiliária. Cole no botão "Enviar" de um formulário (Lovable, Elementor,
-        Typeform via webhook, etc.) e todo lead cai direto no "Lead Novo" e entra na roleta.
-      </p>
-
-      <div style={{ ...card }}>
+    <Bloco titulo="Formulário do seu site / landing page"
+      desc='Um link exclusivo da sua imobiliária. Cole no botão "Enviar" de um formulário (Lovable, Elementor, Typeform via webhook…) e todo lead cai direto em "Lead Novo" e entra na roleta.'>
+      <div>
         <label style={label}>Link do webhook (POST)</label>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           <input readOnly value={url} onFocus={e => e.currentTarget.select()} style={{ ...input, marginBottom: 0, flex: '1 1 320px', fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }} />
@@ -289,13 +331,15 @@ Não use nenhuma biblioteca de backend — é só o fetch direto no submit.`;
         <pre style={pre}>{promptLovable}</pre>
         <button onClick={() => copiar(promptLovable, 'prompt')} style={botao}>{copiado === 'prompt' ? 'Copiado!' : 'Copiar prompt do Lovable'}</button>
       </div>
-    </section>
+    </Bloco>
   );
 }
 
 const botao: React.CSSProperties = { padding: '9px 14px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--card)', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer' };
 const pre: React.CSSProperties = { background: 'var(--bg)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, fontSize: 12, lineHeight: 1.55, overflowX: 'auto', margin: '0 0 8px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' };
 
+const linhaNumero: React.CSSProperties = { border: '1px solid var(--line)', borderRadius: 10, background: 'var(--card)', padding: 14 };
+const botaoNovoNumero: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '12px 14px', borderRadius: 10, background: 'none', textAlign: 'left', border: '1px dashed var(--line)', color: 'var(--muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const btn: React.CSSProperties = { padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'var(--card)', fontSize: 12.5, fontWeight: 600 };
 const dtStyle: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted)', alignSelf: 'start', paddingTop: 1 };
 
@@ -609,10 +653,10 @@ function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
   }
 
   const linha = (nome: string, s: { id: string; status: string; numero: string | null } | undefined, onConnect: () => void) => (
-    <div className="data-row" style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
+    <div className="data-row" style={{ ...linhaNumero, display: 'flex', alignItems: 'center', gap: 14 }}>
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: s?.status === 'conectada' ? 'var(--olive)' : 'var(--muted)' }} />
+          <IconeWhatsapp size={18} color={s?.status === 'conectada' ? '#25D366' : 'var(--muted)'} />
           <span style={{ fontSize: 13.5, fontWeight: 700 }}>{nome}</span>
         </span>
         <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
@@ -631,23 +675,25 @@ function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
   );
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <p style={secTitle}>{modo === 'central' ? 'Números da imobiliária' : 'Números dos corretores'}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+    <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {modo === 'central'
           ? <>
               {centrais.map(s => (
-                <div key={s.id} style={card}>
+                <div key={s.id} style={linhaNumero}>
                 <div className="data-row" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.status === 'conectada' ? 'var(--olive)' : 'var(--muted)' }} />
+                      <IconeWhatsapp size={18} />
                       <input
                         defaultValue={s.rotulo || ''} placeholder="Rótulo (ex: Vendas, Locação)"
                         onBlur={e => { const v = e.target.value.trim(); if (v !== (s.rotulo || '')) renomear(s.id, v); }}
-                        style={{ fontSize: 13.5, fontWeight: 700, border: '1px solid transparent', background: 'none', padding: '2px 4px', borderRadius: 5, minWidth: 120 }}
+                        size={Math.max(10, (s.rotulo || '').length + 2)}
+                        style={{ fontSize: 13.5, fontWeight: 700, border: '1px solid transparent', background: 'none', padding: '2px 4px', borderRadius: 5, minWidth: 0 }}
                         onFocus={e => e.currentTarget.style.borderColor = 'var(--line)'}
                       />
+                      <Selo cor={s.status === 'conectada' ? 'ok' : 'neutro'}>Não oficial {s.status === 'conectada' ? 'ligado' : 'desligado'}</Selo>
+                      {s.oficialAtiva && <Selo cor="ok">Oficial ligado</Selo>}
                     </span>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
                       {s.status === 'conectada' ? 'Não oficial: +' + s.numero : s.status === 'conectando' ? 'aguardando leitura do QR…' : s.oficialAtiva ? 'Não oficial desligada (opcional — ligue pra mandar a 1ª mensagem e o follow-up sem modelo pago)' : 'não conectado'}
@@ -665,11 +711,11 @@ function ConexaoWhatsapp({ modo }: { modo: ModoWhatsapp }) {
                 <OficialDoNumero s={s} />
                 </div>
               ))}
-              <button onClick={() => abrirConexao('central', undefined, 'Novo número')} style={{ ...card, textAlign: 'left', border: '1px dashed var(--line)', color: 'var(--muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={() => abrirConexao('central', undefined, 'Novo número')} style={botaoNovoNumero}>
                 + Conectar {centrais.length ? 'outro número' : 'um número'} pelo WhatsApp não oficial
               </button>
               <BotaoConectarOficial rotuloBotao={'+ Conectar ' + (centrais.length ? 'outro número' : 'um número') + ' pela API oficial do WhatsApp'}
-                estilo={{ ...card, textAlign: 'left', border: '1px dashed var(--line)', color: 'var(--muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} />
+                estilo={botaoNovoNumero} />
             </>
           : (corretores.length === 0
               ? <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: 0 }}>Nenhum corretor cadastrado ainda.</p>
