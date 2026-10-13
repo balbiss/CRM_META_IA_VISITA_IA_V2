@@ -71,6 +71,22 @@ export async function executarPendente(): Promise<Record<string, unknown>> {
   }
 }
 
+const NOME_TELA: Record<string, string> = {
+  '/dash': 'Painel (dashboard)', '/kanban': 'Leads — funil (Kanban)', '/conversas': 'Conversas', '/clientes': 'Clientes',
+  '/imoveis': 'Imóveis', '/agenda': 'Tarefas', '/roleta': 'Roleta', '/rebatidas': 'Rebatidas', '/followup': 'Follow-ups',
+  '/templates': 'Templates', '/integracoes': 'Integrações', '/agente-ia': 'Agente de IA', '/relatorios': 'Relatórios',
+  '/manual': 'Manual do CRM', '/configuracoes': 'Ajustes', '/equipe': 'Equipe', '/importacoes': 'Importar planilha',
+  '/credito': 'Análise de crédito', '/avisos-corretor': 'Avisos por WhatsApp', '/site': 'Site de imóveis',
+  '/links-uteis': 'Links úteis', '/treinamentos': 'Treinamentos',
+};
+
+/** Texto visível de um elemento, sem espaços repetidos e com limite de tamanho. */
+function textoVisivel(el: Element | null, limite: number) {
+  if (!el) return null;
+  const t = ((el as HTMLElement).innerText || '').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+  return t.length > limite ? t.slice(0, limite) + '…' : t;
+}
+
 const TELAS: Record<string, string> = {
   dash: '/dash', kanban: '/kanban', conversas: '/conversas', clientes: '/clientes', imoveis: '/imoveis', agenda: '/agenda',
   roleta: '/roleta', rebatidas: '/rebatidas', followup: '/followup', templates: '/templates', integracoes: '/integracoes',
@@ -81,6 +97,27 @@ export async function executarFerramenta(nome: string, a: Args, ctx: Ctx): Promi
   const s = st();
   const ui = useAssistente.getState();
   switch (nome) {
+    case 'o_que_esta_na_tela': {
+      const rota = window.location.pathname;
+      const tela = NOME_TELA[rota] || rota;
+      const out: Record<string, unknown> = { tela, endereco: rota + window.location.search };
+      const aberto = s.leadId ? acharLead(s.leadId) : undefined;
+      if (aberto) {
+        out.leadAberto = { ...resumoLead(aberto), telefone: aberto.tel, aba: s.leadTab === 'chat' ? 'Chat WhatsApp' : s.leadTab };
+        if (s.leadTab === 'chat') {
+          const msgs = await apiFetch<RemoteMensagem[]>('/api/mensagens/' + aberto.id + '?consulta=1', s.token).catch(() => [] as RemoteMensagem[]);
+          out.conversaNaTela = msgs.slice(-10).map(m => ({ quem: m.direcao === 'in' ? 'cliente' : m.canal === 'ia' ? 'agente de IA' : 'equipe', quando: dataBr(m.enviadoEm), texto: m.texto || (m.anexoTipo ? '[' + m.anexoTipo + ']' : '') }));
+        }
+      }
+      // Conversas: a conversa selecionada na lista
+      if (rota === '/conversas' && s.convId && !aberto) {
+        const l = acharLead(s.convId);
+        if (l) out.conversaSelecionada = resumoLead(l);
+      }
+      // o que está escrito na página (números, títulos, listas) — por trás da ficha, se ela estiver aberta
+      out.textoDaTela = textoVisivel(document.querySelector('main.app-main'), aberto ? 1500 : 3500);
+      return out;
+    }
     case 'buscar_leads': {
       await garantirDados();
       const agora = Date.now();

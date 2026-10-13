@@ -21,6 +21,11 @@ const num = (description: string) => ({ type: Type.NUMBER, description });
 
 export const FERRAMENTAS: FunctionDeclaration[] = [
   {
+    name: 'o_que_esta_na_tela',
+    description: 'Diz o que o usuário está vendo agora no CRM: qual tela, o texto e os números visíveis nela, e o lead que estiver aberto (com a aba e as últimas mensagens, se for o chat). Use SEMPRE que ele falar "esse", "essa", "aqui", "isso", "ele/ela" sem dizer o nome, "essa tela", "esse número", "esse relatório", ou pedir opinião/resumo do que está vendo.',
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
     name: 'buscar_leads',
     description: 'Procura leads no CRM (só os que o usuário pode ver). Use pra qualquer pergunta sobre leads: quantos, quais, de quem, de qual campanha, parados, sem resposta etc. Todos os filtros são opcionais.',
     parameters: {
@@ -144,6 +149,7 @@ export function roteiro(o: { nomeAssistente: string; nomeUsuario: string; papel:
     '- Se pedirem pra abrir uma tela ou um lead, use abrir_tela / abrir_lead.',
     '- Use lembrar quando o usuário pedir pra guardar algo E também por conta própria quando ele contar algo que vale lembrar depois (preferência de cliente, combinado, prazo, informação útil do trabalho) — avise numa frase curta que anotou. Use recordar quando ele perguntar sobre algo guardado.',
     '- Câmera: quando o usuário liga a câmera, você recebe uma imagem por segundo e consegue ver o usuário e o que ele mostrar. Comente o que vê só quando for útil ou quando ele perguntar. Sem câmera ligada, diga que não está vendo nada.',
+    '- Contexto da tela: você não vê a tela como imagem; pra saber o que o usuário está olhando, chame o_que_esta_na_tela. Quando ele se referir a algo sem dar nome ("esse lead", "manda pra ele", "o que acha desse relatório"), chame primeiro o_que_esta_na_tela e use o que vier dela.',
     '- Janelas: abrir_lead abre a ficha; fechar_janela fecha a ficha ou a janela aberta; fechar_paineis fecha só os seus painéis.',
     '- Você não tem acesso à internet, só ao CRM.',
     o.memorias.length
