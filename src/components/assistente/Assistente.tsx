@@ -148,7 +148,8 @@ function PainelAssistente() {
     if (sc?.interrupted) falante.current?.interromper();
     for (const p of sc?.modelTurn?.parts || []) if (p.inlineData?.data) falante.current?.tocar(p.inlineData.data);
     if (sc?.inputTranscription?.text) falar('voce', sc.inputTranscription.text);
-    if (sc?.outputTranscription?.text) falar('assistente', sc.outputTranscription.text);
+    // o Google às vezes solta marcações técnicas na transcrição ({sound_effects:...}) — não é fala
+    if (sc?.outputTranscription?.text) { const t = sc.outputTranscription.text.replace(/\{[a-z_]+:[a-z_]*\}?/g, ''); if (t) falar('assistente', t); }
     if (sc?.turnComplete) quebra.current = true;
     if (m.goAway) falar('sistema', 'A conversa vai encerrar em instantes (limite de tempo da sessão). É só abrir de novo.');
     const chamadas = m.toolCall?.functionCalls || [];
