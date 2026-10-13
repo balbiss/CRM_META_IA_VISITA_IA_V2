@@ -61,6 +61,7 @@ function PainelAssistente() {
     ui().falar(quem, t, !quebra.current);
     quebra.current = quem === 'sistema';
   };
+  const falasDaConversa = () => ui().falas.filter(f => !f.antiga && f.texto.trim()).map(f => ({ quem: f.quem, texto: f.texto }));
   const avisarIa = (t: string) => {
     try { sessao.current?.sendClientContent({ turns: [{ role: 'user', parts: [{ text: t }] }], turnComplete: true }); } catch { /* sessão caiu */ }
   };
@@ -91,8 +92,9 @@ function PainelAssistente() {
     await mic.current?.parar(); mic.current = null;
     await falante.current?.fechar(); falante.current = null;
     gestos.current?.parar(); gestos.current = null;
+    pararQuadros();
     if (sessaoId.current && token) {
-      await apiFetch('/api/assistente/sessao/' + sessaoId.current + '/sinal', token, { method: 'POST', body: JSON.stringify({ fim: true }) }).catch(() => {});
+      await apiFetch('/api/assistente/sessao/' + sessaoId.current + '/sinal', token, { method: 'POST', body: JSON.stringify({ fim: true, falas: falasDaConversa() }) }).catch(() => {});
     }
     sessaoId.current = null;
     ui().set(motivo ? { status: 'erro', erro: motivo, pendente: null } : { status: 'desligado', pendente: null });
@@ -101,7 +103,16 @@ function PainelAssistente() {
   const iniciar = async () => {
     if (!token) return;
     encerrando.current = false;
-    ui().set({ status: 'conectando', erro: null, falas: [] });
+    const anteriores = await apiFetch<{ quem: 'voce' | 'assistente' | 'sistema'; texto: string }[]>('/api/assistente/historico', token).catch(() => []);
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    ui().set({
+      status: 'conectando', erro: null,
+      falas: [
+        ...anteriores.map((f, i) => ({ id: -1000 + i, quem: f.quem, texto: f.texto, antiga: true })),
+        ...(anteriores.length ? [{ id: -1, quem: 'sistema' as const, texto: 'Nova conversa · ' + hora, antiga: true }] : []),
+      ],
+    });
+    quebra.current = true;
     try {
       const r = await apiFetch<RespSessao>('/api/assistente/sessao', token, { method: 'POST' });
       sessaoId.current = r.sessaoId;
@@ -165,7 +176,7 @@ function PainelAssistente() {
     if (status !== 'online') return;
     const t = setInterval(async () => {
       if (!sessaoId.current || !token) return;
-      const r = await apiFetch<{ segundosRestantes: number; encerrar: boolean }>('/api/assistente/sessao/' + sessaoId.current + '/sinal', token, { method: 'POST', body: '{}' }).catch(() => null);
+      const r = await apiFetch<{ segundosRestantes: number; encerrar: boolean }>('/api/assistente/sessao/' + sessaoId.current + '/sinal', token, { method: 'POST', body: JSON.stringify({ falas: falasDaConversa() }) }).catch(() => null);
       if (!r) return;
       setRestante(r.segundosRestantes);
       if (r.encerrar) void encerrar('Acabaram os minutos do assistente deste mês.');
@@ -234,13 +245,29 @@ function PainelAssistente() {
       segurando.current = null;
     }
   };
+  const quadros = useRef<number | null>(null);
+  const pararQuadros = () => { if (quadros.current) clearInterval(quadros.current); quadros.current = null; };
+  const enviarQuadros = () => {
+    pararQuadros();
+    const tela = document.createElement('canvas');
+    quadros.current = window.setInterval(() => {
+      const v = video.current;
+      if (!v || v.readyState < 2 || !sessao.current) return;
+      tela.width = 480; tela.height = Math.round(480 * (v.videoHeight / v.videoWidth || 0.75));
+      tela.getContext('2d')!.drawImage(v, 0, 0, tela.width, tela.height);
+      const data = tela.toDataURL('image/jpeg', 0.6).split(',')[1];
+      try { sessao.current.sendRealtimeInput({ video: { data, mimeType: 'image/jpeg' } }); } catch { /* fechou */ }
+    }, 1000);
+  };
+  useEffect(() => pararQuadros, []);
   const trocarCamera = async () => {
-    if (camera) { gestos.current?.parar(); gestos.current = null; setCamera(false); if (cursor.current) cursor.current.style.display = 'none'; return; }
+    if (camera) { pararQuadros(); gestos.current?.parar(); gestos.current = null; setCamera(false); if (cursor.current) cursor.current.style.display = 'none'; return; }
     setCamera(true);
     try {
       const { ligarGestos } = await import('../../lib/assistente/gestos');
       await new Promise(r => setTimeout(r, 50));
       gestos.current = await ligarGestos(video.current!, canvas.current!, { cursor: aoCursor, gesto: aoGesto });
+      enviarQuadros();
     } catch (e) {
       setCamera(false);
       falar('sistema', /Permission|NotAllowed/i.test((e as Error).message) ? 'O navegador bloqueou a câmera.' : 'Não deu pra ligar os gestos: ' + (e as Error).message);
@@ -298,6 +325,7 @@ function PainelAssistente() {
               {!falas.length && status === 'online' && <p style={{ fontSize: 12.5, color: '#93a7c7', textAlign: 'center', margin: '6px 0' }}>Pode falar. Ex.: "quantos leads entraram hoje?", "abre a conversa da Maria", "cria uma tarefa de ligar pro João amanhã às 10h".</p>}
               {falas.map(f => (
                 <div key={f.id} style={{
+                  opacity: f.antiga ? 0.55 : 1,
                   alignSelf: f.quem === 'voce' ? 'flex-end' : f.quem === 'sistema' ? 'center' : 'flex-start',
                   maxWidth: f.quem === 'sistema' ? '100%' : '85%', fontSize: f.quem === 'sistema' ? 11.5 : 13, lineHeight: 1.45,
                   color: f.quem === 'sistema' ? '#93a7c7' : '#e2ecff',
@@ -325,6 +353,7 @@ function PainelAssistente() {
               <div style={{ position: 'relative', margin: '0 14px 10px', borderRadius: 10, overflow: 'hidden', border: `1px solid ${LINHA}`, height: 120 }}>
                 <video ref={video} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', opacity: 0.55 }} />
                 <canvas ref={canvas} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: 'scaleX(-1)' }} />
+                <span style={{ position: 'absolute', left: 8, top: 6, fontSize: 10.5, color: '#fda4af', fontWeight: 700 }}>● {nome} está vendo a câmera</span>
                 <span style={{ position: 'absolute', left: 8, bottom: 6, fontSize: 10.5, color: '#cbd5e1' }}>pinça arrasta/clica · punho fecha painel · ✌ microfone · 👍 confirma</span>
               </div>
             )}

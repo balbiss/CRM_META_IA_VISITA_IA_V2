@@ -205,6 +205,14 @@ export async function executarFerramenta(nome: string, a: Args, ctx: Ctx): Promi
       ui.abrirPainel(String(a.titulo || 'Informação'), String(a.conteudo || ''));
       return { feito: true };
     }
+    case 'fechar_janela': {
+      const fechadas: string[] = [];
+      if (s.leadId) { const l = acharLead(s.leadId); s.closeLead(); fechadas.push('ficha do lead' + (l ? ' ' + l.nome : '')); }
+      if (s.importOpen) { s.setImportOpen(false); fechadas.push('importar'); }
+      if (s.newLeadOpen) { useAppStore.setState({ newLeadOpen: false }); fechadas.push('novo lead'); }
+      if (s.confirm) { s.closeConfirm(); fechadas.push('confirmação'); }
+      return fechadas.length ? { feito: true, fechou: fechadas } : { feito: false, resumo: 'Não havia nenhuma janela aberta.' };
+    }
     case 'fechar_paineis': {
       ui.set({ paineis: [] });
       return { feito: true };

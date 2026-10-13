@@ -8,7 +8,7 @@ export type AcaoPendente =
   | { tipo: 'mover'; resumo: string; leadId: string; colunaId: string }
   | { tipo: 'mensagem'; resumo: string; leadId: string; texto: string };
 export type ConfigAssistente = { disponivel: boolean; liberado: boolean; nome: string; voz: string; vozes: string[]; minutosMes: number; minutosUsados: number };
-export type Fala = { id: number; quem: 'voce' | 'assistente' | 'sistema'; texto: string };
+export type Fala = { id: number; quem: 'voce' | 'assistente' | 'sistema'; texto: string; antiga?: boolean };
 
 type Estado = {
   config: ConfigAssistente | null;

@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality, Type, type FunctionDeclaration, type LiveConnectConfig } from '@google/genai';
+import { GoogleGenAI, MediaResolution, Modality, Type, type FunctionDeclaration, type LiveConnectConfig } from '@google/genai';
 
 /** Assistente de voz do CRM (Gemini Live). O navegador fala direto com o Google usando um token
  *  temporário que ESTE servidor gera, já travado no modelo, no roteiro e nas ferramentas — a chave
@@ -112,21 +112,27 @@ export const FERRAMENTAS: FunctionDeclaration[] = [
     parameters: { type: Type.OBJECT, properties: { titulo: str('Título curto'), conteudo: str('Texto do painel; uma linha por item') }, required: ['titulo', 'conteudo'] },
   },
   {
+    name: 'fechar_janela',
+    description: 'Fecha a janela/ficha que está aberta na tela do CRM (ficha do lead, a conversa aberta dentro da ficha, janelas de importar ou de novo lead). Use quando o usuário pedir pra fechar a ficha, a conversa ou "essa janela".',
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
     name: 'fechar_paineis',
-    description: 'Fecha todos os painéis abertos pelo assistente.',
+    description: 'Fecha só os painéis de informação que VOCÊ (assistente) abriu com mostrar_painel. Não fecha a ficha do lead — pra isso use fechar_janela.',
     parameters: { type: Type.OBJECT, properties: {} },
   },
 ];
 
 const PAPEL: Record<string, string> = { dono: 'dono da imobiliária', gerente: 'gerente', corretor: 'corretor' };
 
-export function roteiro(o: { nomeAssistente: string; nomeUsuario: string; papel: string; nomeImob: string; memorias: { id: string; texto: string }[] }) {
+export function roteiro(o: { nomeAssistente: string; nomeUsuario: string; papel: string; nomeImob: string; memorias: { id: string; texto: string }[]; historico: { quem: string; texto: string }[] }) {
   const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   return [
     `Você é ${o.nomeAssistente}, o assistente de voz do CRM da imobiliária ${o.nomeImob}.`,
     `Está falando com ${o.nomeUsuario}, ${PAPEL[o.papel] || o.papel}. Agora é ${agora} (horário de Brasília).`,
     'Fale sempre em português do Brasil, de forma natural, educada e objetiva — respostas curtas, como numa conversa por voz. Chame o usuário pelo primeiro nome de vez em quando.',
     'Regras:',
+    '- Só diga que fez algo (abriu, fechou, criou, moveu, enviou) depois que a ferramenta devolver feito: true. Se ela devolver erro, ou se não existir ferramenta pra aquilo, diga com sinceridade que não conseguiu.',
     '- Nunca invente dados. Para qualquer informação do CRM, use as ferramentas (buscar_leads, detalhes_lead, resumo_painel, listar_tarefas). Se não achar, diga que não encontrou.',
     '- Nunca fale ids em voz alta; use o nome do lead. Quando houver dois leads com nomes parecidos, pergunte qual.',
     o.papel === 'corretor'
@@ -136,10 +142,15 @@ export function roteiro(o: { nomeAssistente: string; nomeUsuario: string; papel:
     '- Mensagens de WhatsApp: escreva como um corretor educado escreveria, curtas, sem prometer valores ou condições que você não viu no CRM.',
     '- Quando a resposta for uma lista grande, mostre num painel (mostrar_painel) e fale só o resumo.',
     '- Se pedirem pra abrir uma tela ou um lead, use abrir_tela / abrir_lead.',
-    '- Se o usuário pedir pra você lembrar de algo, use lembrar. Use recordar quando ele perguntar sobre algo que pediu pra guardar.',
+    '- Use lembrar quando o usuário pedir pra guardar algo E também por conta própria quando ele contar algo que vale lembrar depois (preferência de cliente, combinado, prazo, informação útil do trabalho) — avise numa frase curta que anotou. Use recordar quando ele perguntar sobre algo guardado.',
+    '- Câmera: quando o usuário liga a câmera, você recebe uma imagem por segundo e consegue ver o usuário e o que ele mostrar. Comente o que vê só quando for útil ou quando ele perguntar. Sem câmera ligada, diga que não está vendo nada.',
+    '- Janelas: abrir_lead abre a ficha; fechar_janela fecha a ficha ou a janela aberta; fechar_paineis fecha só os seus painéis.',
     '- Você não tem acesso à internet, só ao CRM.',
     o.memorias.length
       ? 'Anotações que o usuário já pediu pra lembrar (mais recentes primeiro):\n' + o.memorias.map(m => `- ${m.texto}`).join('\n')
+      : '',
+    o.historico.length
+      ? 'Final das suas últimas conversas com este usuário (continue de onde pararam se fizer sentido; não repita cumprimento longo):\n' + o.historico.map(f => (f.quem === 'voce' ? 'Usuário: ' : f.quem === 'assistente' ? 'Você: ' : '(sistema) ') + f.texto).join('\n')
       : '',
   ].filter(Boolean).join('\n');
 }
@@ -150,6 +161,8 @@ export function configSessao(o: { voz: string; instrucoes: string }): LiveConnec
     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: o.voz } }, languageCode: 'pt-BR' },
     systemInstruction: o.instrucoes,
     tools: [{ functionDeclarations: FERRAMENTAS }],
+    // imagens da câmera em resolução baixa: bem mais barato e suficiente pra ver a pessoa
+    mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW,
     inputAudioTranscription: {},
     outputAudioTranscription: {},
   };

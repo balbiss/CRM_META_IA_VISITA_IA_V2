@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, gte, ilike, sql } from 'drizzle-orm';
+import type { Request } from 'express';
 import { db } from '../db/client.js';
 import { assistenteMemorias, assistenteSessoes, imobiliarias, perfis } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -16,6 +17,31 @@ async function segundosUsadosNoMes(imobiliariaId: string) {
   const [r] = await db.select({ s: sql<number>`coalesce(sum(${assistenteSessoes.segundos}), 0)::int` }).from(assistenteSessoes)
     .where(and(eq(assistenteSessoes.imobiliariaId, imobiliariaId), gte(assistenteSessoes.iniciadaEm, inicioDoMes())));
   return r?.s ?? 0;
+}
+
+type Fala = { quem: string; texto: string };
+
+/** Final das últimas conversas do usuário (até 7 dias, ~40 falas) — vai no roteiro e aparece na tela. */
+async function historicoRecente(perfilId: string): Promise<Fala[]> {
+  const rows = await db.select({ t: assistenteSessoes.transcricao }).from(assistenteSessoes)
+    .where(and(eq(assistenteSessoes.perfilId, perfilId), gte(assistenteSessoes.iniciadaEm, new Date(Date.now() - 7 * 86400000)), sql`jsonb_array_length(${assistenteSessoes.transcricao}) > 0`))
+    .orderBy(desc(assistenteSessoes.iniciadaEm)).limit(3);
+  const falas = rows.reverse().flatMap(r => r.t || []).slice(-40);
+  // limita o tamanho total (o roteiro vai em toda conversa)
+  let total = 0;
+  const out: Fala[] = [];
+  for (let i = falas.length - 1; i >= 0; i--) {
+    total += falas[i].texto.length;
+    if (total > 4000) break;
+    out.unshift(falas[i]);
+  }
+  return out;
+}
+
+/** Falas que o navegador manda no sinal (valida e corta). */
+function falasDoCorpo(req: Request): Fala[] | null {
+  const p = z.array(z.object({ quem: z.enum(['voce', 'assistente', 'sistema']), texto: z.string().max(2000) })).max(200).safeParse(req.body?.falas);
+  return p.success ? p.data.filter(f => f.texto.trim()).map(f => ({ quem: f.quem, texto: f.texto.trim().slice(0, 1000) })).slice(-80) : null;
 }
 
 async function imobDe(id: string) {
@@ -64,9 +90,10 @@ assistenteRouter.post('/sessao', async (req, res) => {
   const [eu] = await db.select({ nome: perfis.nome, role: perfis.role }).from(perfis).where(eq(perfis.id, sub)).limit(1);
   const memorias = await db.select({ id: assistenteMemorias.id, texto: assistenteMemorias.texto }).from(assistenteMemorias)
     .where(eq(assistenteMemorias.perfilId, sub)).orderBy(desc(assistenteMemorias.criadoEm)).limit(30);
+  const historico = await historicoRecente(sub);
   const config = configSessao({
     voz: imob.assistenteVoz,
-    instrucoes: roteiro({ nomeAssistente: imob.assistenteNome, nomeUsuario: (eu?.nome || '').split(' ')[0] || 'usuário', papel: eu?.role || req.auth!.role, nomeImob: imob.nome, memorias }),
+    instrucoes: roteiro({ nomeAssistente: imob.assistenteNome, nomeUsuario: (eu?.nome || '').split(' ')[0] || 'usuário', papel: eu?.role || req.auth!.role, nomeImob: imob.nome, memorias, historico }),
   });
   let token: string;
   try { token = await criarTokenTemporario(config); } catch (e) {
@@ -86,12 +113,18 @@ assistenteRouter.post('/sessao/:id/sinal', async (req, res) => {
   if (!s) return res.status(404).json({ error: 'Sessão não encontrada' });
   if (!s.encerrada) {
     const real = Math.ceil((Date.now() - s.iniciadaEm.getTime()) / 1000);
-    await db.update(assistenteSessoes).set({ segundos: Math.max(s.segundos, real), ultimoSinalEm: new Date(), encerrada: fim })
+    const falas = falasDoCorpo(req);
+    await db.update(assistenteSessoes).set({ segundos: Math.max(s.segundos, real), ultimoSinalEm: new Date(), encerrada: fim, ...(falas ? { transcricao: falas } : {}) })
       .where(eq(assistenteSessoes.id, s.id));
   }
   const imob = await imobDe(s.imobiliariaId);
   const restante = (imob?.assistenteMinutosMes ?? 0) * 60 - await segundosUsadosNoMes(s.imobiliariaId);
   res.json({ segundosRestantes: Math.max(0, restante), encerrar: restante <= 0 });
+});
+
+/** Histórico pra mostrar na tela ao reabrir o assistente. */
+assistenteRouter.get('/historico', async (req, res) => {
+  res.json(await historicoRecente(req.auth!.sub));
 });
 
 // --- Memória pessoal (cada usuário só mexe na sua) ---

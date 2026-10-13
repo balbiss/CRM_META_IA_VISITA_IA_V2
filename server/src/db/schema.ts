@@ -728,6 +728,8 @@ export const assistenteSessoes = pgTable('assistente_sessoes', {
   ultimoSinalEm: timestamp('ultimo_sinal_em', { withTimezone: true }).notNull().defaultNow(),
   segundos: integer('segundos').notNull().default(0),
   encerrada: boolean('encerrada').notNull().default(false),
+  // O que foi dito (pra ele lembrar da conversa da próxima vez e mostrar o histórico na tela).
+  transcricao: jsonb('transcricao').$type<{ quem: string; texto: string }[]>().notNull().default([]),
 }, table => ({
   imobIdx: index('assistente_sessoes_imob_idx').on(table.imobiliariaId, table.iniciadaEm),
 }));

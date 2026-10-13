@@ -309,6 +309,13 @@
       "when": 1791929531030,
       "tag": "0043_same_forge",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791931820706,
+      "tag": "0044_futuristic_mojo",
+      "breakpoints": true
     }
   ]
 }
