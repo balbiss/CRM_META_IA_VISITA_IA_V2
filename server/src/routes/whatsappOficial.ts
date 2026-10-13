@@ -5,6 +5,7 @@ import type { Server as SocketServer } from 'socket.io';
 import { db } from '../db/client.js';
 import { leads, mensagensWhatsapp, sessoesWhatsapp } from '../db/schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requirePlataforma } from '../middleware/plataforma.js';
 import {
   apagarModelo, assinarApp, assinaturaValida, baixarMidiaOficial, cifrarToken, configPublica, criarModelo, hubLiberarNumero,
   hubRegistrarNumero, infoNumero, janelaAberta, lembrarWaId, listarModelos, numerosDaWaba, oficialConfigurado, primeiroNome,
@@ -72,6 +73,22 @@ export function whatsappOficialRouter(io: SocketServer) {
     } catch (e) {
       console.error('webhook oficial:', (e as Error).message);
     }
+  });
+
+  /** Admin da plataforma: liga a oficial num número que JÁ está na API oficial por este mesmo app
+   *  (ex.: conectado antes pelo Chatwoot), reaproveitando o token de usuário do sistema — o Cadastro
+   *  Incorporado não deixa conectar de novo um número que já está registrado. */
+  router.post('/vincular', requirePlataforma, async (req, res) => {
+    const parsed = z.object({
+      imobiliariaId: z.string().uuid(),
+      token: z.string().min(50),
+      wabaId: z.string().regex(/^\d+$/),
+      phoneNumberId: z.string().regex(/^\d+$/),
+      sessaoId: z.string().uuid().optional(),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Dados incompletos' });
+    const r = await ligarOficial(io, parsed.data.imobiliariaId, { ...parsed.data, sincronizar: false });
+    res.status(r.status).json(r.body);
   });
 
   // ---------------------------------------------------------------
@@ -147,65 +164,10 @@ export function whatsappOficialRouter(io: SocketServer) {
       sessaoId: z.string().uuid().optional(),
     }).safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Dados do cadastro incompletos' });
-    const { imobiliariaId } = req.auth!;
-    const { code, wabaId } = parsed.data;
-
     let token: string;
-    try { token = await trocarCodigo(code); } catch (e) { return res.status(502).json({ error: 'A Meta recusou o código: ' + (e as Error).message }); }
-
-    // Na Coexistência a Meta pode devolver só a WABA: o número vem da lista dela.
-    let phoneNumberId = parsed.data.phoneNumberId;
-    let display = '';
-    try {
-      if (!phoneNumberId) {
-        const nums = await numerosDaWaba(wabaId, token);
-        if (nums.length !== 1) return res.status(400).json({ error: nums.length ? 'A conta tem mais de um número — conecte de novo escolhendo só um.' : 'Nenhum número nessa conta do WhatsApp.' });
-        phoneNumberId = nums[0].id;
-        display = nums[0].display_phone_number || '';
-      } else {
-        display = (await infoNumero(phoneNumberId, token)).display_phone_number || '';
-      }
-      await assinarApp(wabaId, token);
-    } catch (e) {
-      return res.status(502).json({ error: 'Não deu pra ativar o número na Meta: ' + (e as Error).message });
-    }
-    const numero = soDigitos(display);
-
-    // Um número oficial só pode estar numa imobiliária.
-    const [outro] = await db.select({ id: sessoesWhatsapp.id, imob: sessoesWhatsapp.imobiliariaId }).from(sessoesWhatsapp)
-      .where(eq(sessoesWhatsapp.oficialPhoneNumberId, phoneNumberId)).limit(1);
-    if (outro && outro.imob !== imobiliariaId) return res.status(409).json({ error: 'Esse número já está conectado em outra imobiliária.' });
-    const noHub = await hubRegistrarNumero(phoneNumberId, wabaId, display, imobiliariaId);
-    if (noHub === 'outro') return res.status(409).json({ error: 'Esse número já está conectado em outro sistema da InoovaWeb.' });
-    if (noHub === 'erro') return res.status(502).json({ error: 'Não deu pra registrar o número no hub. Tente de novo.' });
-
-    // Liga ao número central certo: o escolhido na tela, o que já tem a oficial, o WAHA do MESMO
-    // número (híbrido) ou, se não existir, cria um número central só com a oficial.
-    const centrais = await db.select().from(sessoesWhatsapp)
-      .where(and(eq(sessoesWhatsapp.imobiliariaId, imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'))).orderBy(asc(sessoesWhatsapp.criadoEm));
-    const mesmo = (n: string | null) => !!n && !!numero && n.slice(-8) === numero.slice(-8);
-    let alvo = centrais.find(s => s.id === parsed.data.sessaoId)
-      ?? centrais.find(s => s.oficialPhoneNumberId === phoneNumberId)
-      ?? centrais.find(s => mesmo(s.numero));
-    const dados = {
-      oficialPhoneNumberId: phoneNumberId, oficialWabaId: wabaId, oficialNumero: numero || null,
-      ...cifrarToken(token), oficialAtiva: true, oficialErro: null,
-    };
-    if (alvo) {
-      [alvo] = await db.update(sessoesWhatsapp).set(dados).where(eq(sessoesWhatsapp.id, alvo.id)).returning();
-    } else {
-      const sessionName = centrais.length === 0 ? 'imob-' + imobiliariaId : 'imob-' + imobiliariaId + '-' + Date.now().toString(36);
-      [alvo] = await db.insert(sessoesWhatsapp).values({
-        imobiliariaId, escopo: 'central', sessionName, status: 'desconectada', numero: numero || null, rotulo: 'API oficial', ...dados,
-      }).returning();
-    }
-
-    // Exigência da Coexistência: pedir a sincronização logo depois de conectar.
-    const errosSync = await sincronizarCoexistencia(phoneNumberId, token);
-    if (errosSync.length) console.warn('oficial: sincronização da Coexistência —', errosSync.join(' | '));
-
-    io.to('imobiliaria:' + imobiliariaId).emit('sessao:mudou', { sessionName: alvo.sessionName, status: alvo.status });
-    res.status(201).json({ ...publica(alvo), avisoSync: errosSync.length ? 'A Meta não aceitou a sincronização: ' + errosSync.join('; ') : null });
+    try { token = await trocarCodigo(parsed.data.code); } catch (e) { return res.status(502).json({ error: 'A Meta recusou o código: ' + (e as Error).message }); }
+    const r = await ligarOficial(io, req.auth!.imobiliariaId, { ...parsed.data, token, sincronizar: true });
+    res.status(r.status).json(r.body);
   });
 
   /** Desliga a oficial do número (o WAHA, se houver, continua). */
@@ -284,6 +246,68 @@ export function whatsappOficialRouter(io: SocketServer) {
   });
 
   return router;
+}
+
+/** Liga a API oficial num número central da imobiliária: confere o número na Meta, assina o app na
+ *  WABA, registra no hub e grava (token cifrado). Usado pelo Cadastro Incorporado e pelo admin. */
+async function ligarOficial(io: SocketServer, imobiliariaId: string, o: { token: string; wabaId: string; phoneNumberId?: string; sessaoId?: string; sincronizar: boolean }):
+  Promise<{ status: number; body: unknown }> {
+  const resp = (status: number, body: unknown) => ({ status, body });
+  const { token, wabaId } = o;
+  // Na Coexistência a Meta pode devolver só a WABA: o número vem da lista dela.
+  let phoneNumberId = o.phoneNumberId;
+  let display = '';
+  try {
+    if (!phoneNumberId) {
+      const nums = await numerosDaWaba(wabaId, token);
+      if (nums.length !== 1) return resp(400, { error: nums.length ? 'A conta tem mais de um número — conecte de novo escolhendo só um.' : 'Nenhum número nessa conta do WhatsApp.' });
+      phoneNumberId = nums[0].id;
+      display = nums[0].display_phone_number || '';
+    } else {
+      display = (await infoNumero(phoneNumberId, token)).display_phone_number || '';
+    }
+    await assinarApp(wabaId, token);
+  } catch (e) {
+    return resp(502, { error: 'Não deu pra ativar o número na Meta: ' + (e as Error).message });
+  }
+  const numero = soDigitos(display);
+
+  // Um número oficial só pode estar numa imobiliária.
+  const [outro] = await db.select({ id: sessoesWhatsapp.id, imob: sessoesWhatsapp.imobiliariaId }).from(sessoesWhatsapp)
+    .where(eq(sessoesWhatsapp.oficialPhoneNumberId, phoneNumberId)).limit(1);
+  if (outro && outro.imob !== imobiliariaId) return resp(409, { error: 'Esse número já está conectado em outra imobiliária.' });
+  const noHub = await hubRegistrarNumero(phoneNumberId, wabaId, display, imobiliariaId);
+  if (noHub === 'outro') return resp(409, { error: 'Esse número já está conectado em outro sistema da InoovaWeb.' });
+  if (noHub === 'erro') return resp(502, { error: 'Não deu pra registrar o número no hub. Tente de novo.' });
+
+  // Liga ao número central certo: o escolhido na tela, o que já tem a oficial, o WAHA do MESMO
+  // número (híbrido) ou, se não existir, cria um número central só com a oficial.
+  const centrais = await db.select().from(sessoesWhatsapp)
+    .where(and(eq(sessoesWhatsapp.imobiliariaId, imobiliariaId), eq(sessoesWhatsapp.escopo, 'central'))).orderBy(asc(sessoesWhatsapp.criadoEm));
+  const mesmo = (n: string | null) => !!n && !!numero && n.slice(-8) === numero.slice(-8);
+  let alvo = centrais.find(s => s.id === o.sessaoId)
+    ?? centrais.find(s => s.oficialPhoneNumberId === phoneNumberId)
+    ?? centrais.find(s => mesmo(s.numero));
+  const dados = {
+    oficialPhoneNumberId: phoneNumberId, oficialWabaId: wabaId, oficialNumero: numero || null,
+    ...cifrarToken(token), oficialAtiva: true, oficialErro: null,
+  };
+  if (alvo) {
+    [alvo] = await db.update(sessoesWhatsapp).set(dados).where(eq(sessoesWhatsapp.id, alvo.id)).returning();
+  } else {
+    const sessionName = centrais.length === 0 ? 'imob-' + imobiliariaId : 'imob-' + imobiliariaId + '-' + Date.now().toString(36);
+    [alvo] = await db.insert(sessoesWhatsapp).values({
+      imobiliariaId, escopo: 'central', sessionName, status: 'desconectada', numero: numero || null, rotulo: 'API oficial', ...dados,
+    }).returning();
+  }
+
+  // Exigência da Coexistência: pedir a sincronização logo depois de conectar (só vale uma vez,
+  // nas 24h depois do cadastro — quem reaproveita uma conexão antiga não pede de novo).
+  const errosSync = o.sincronizar ? await sincronizarCoexistencia(phoneNumberId, token) : [];
+  if (errosSync.length) console.warn('oficial: sincronização da Coexistência —', errosSync.join(' | '));
+
+  io.to('imobiliaria:' + imobiliariaId).emit('sessao:mudou', { sessionName: alvo.sessionName, status: alvo.status });
+  return resp(201, { ...publica(alvo), avisoSync: errosSync.length ? 'A Meta não aceitou a sincronização: ' + errosSync.join('; ') : null });
 }
 
 async function sessaoDaImob(imobiliariaId: string, id: string) {
