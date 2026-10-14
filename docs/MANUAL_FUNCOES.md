@@ -711,6 +711,8 @@ A imobiliária ganha um assistente que **conversa por voz** (ou por texto) e mex
   lembrar do João?". Cada pessoa tem as suas anotações.
 - **Listas grandes** aparecem num painel na tela (dá pra arrastar e fechar).
 
+**Configurar o CRM por voz (só dono e gerente):** "acrescenta uma pergunta sobre FGTS no Agente de IA", "muda o nome do agente pra Duda", "cadastra um apartamento de 2 quartos no Marco por 320 mil", "baixa o preço desse imóvel pra 310 mil", "tira esse imóvel do site", "muda a cor do site pra roxo", "coloca a Carla e o Pedro na roleta de locação", "cria um template de boas-vindas", "acrescenta um passo no follow-up". Ele lê a configuração atual e mostra um cartão **Confirma?** com o **antes → depois** de cada mudança; só grava depois do sim. Nada é apagado por voz (pra excluir, ele abre a tela). Fotos de imóvel continuam pela tela Imóveis.
+
 **Gestos pela câmera (opcional, botão ✋):** o dedo indicador vira um cursor; **pinça** (polegar +
 indicador) arrasta painéis e, rápida, clica; **punho fechado** fecha o painel; **✌** liga/desliga o
 microfone; **joinha** confirma. Tudo roda no computador — nenhuma imagem da câmera sai dele.
