@@ -21,6 +21,26 @@ const num = (description: string) => ({ type: Type.NUMBER, description });
 
 export const FERRAMENTAS: FunctionDeclaration[] = [
   {
+    name: 'ver_configuracao',
+    description: 'Mostra a configuração atual de uma área do CRM (só dono/gerente). Chame SEMPRE antes de alterar, pra saber os campos, ids e valores atuais.',
+    parameters: { type: Type.OBJECT, properties: { area: str('agente_ia | site | imoveis | roletas | followups | templates', { enum: ['agente_ia', 'site', 'imoveis', 'roletas', 'followups', 'templates'] }) }, required: ['area'] },
+  },
+  {
+    name: 'alterar_configuracao',
+    description: 'PREPARA uma mudança de configuração (não grava ainda): mostra o antes → depois e pede confirmação. mudancas_json = objeto JSON só com os campos que mudam, com os mesmos nomes de campo que ver_configuracao devolveu. Listas (perguntas, criterios, passos, corretores) vão inteiras, já com a alteração. Áreas: agente_ia, site (campos do config + publicado), imovel (alvoId = id do imóvel), roleta (alvoId; campos nome, ativa, padrao, canais, finalidade e corretores = lista de nomes), followup (alvoId; nome, ativo, disparaEmLeadNovo, aoEsgotar e passos = [{conteudo, atrasoMinutos}]), template (alvoId; titulo, texto).',
+    parameters: { type: Type.OBJECT, properties: { area: str('agente_ia | site | imovel | roleta | followup | template', { enum: ['agente_ia', 'site', 'imovel', 'roleta', 'followup', 'template'] }), alvoId: str('id do item (imóvel, roleta, follow-up ou template); vazio pra agente_ia e site'), mudancas_json: str('Objeto JSON com os campos que mudam') }, required: ['area', 'mudancas_json'] },
+  },
+  {
+    name: 'criar_item',
+    description: 'PREPARA a criação (não cria ainda) de um imóvel, template, roleta ou follow-up e pede confirmação. imovel: {tipo, finalidade (Venda|Aluguel), titulo, preco, cidade, endereco, quartos, suites, banheiros, vagas, area, descricao, situacao, aceitaFinanciamento}. template: {titulo, texto}. roleta/followup: {nome}.',
+    parameters: { type: Type.OBJECT, properties: { area: str('imovel | template | roleta | followup', { enum: ['imovel', 'template', 'roleta', 'followup'] }), dados_json: str('Objeto JSON com os dados') }, required: ['area', 'dados_json'] },
+  },
+  {
+    name: 'publicar_imovel_no_site',
+    description: 'PREPARA publicar ou tirar um imóvel do site da imobiliária (pede confirmação).',
+    parameters: { type: Type.OBJECT, properties: { imovelId: str('id do imóvel (de ver_configuracao imoveis)'), publicar: { type: Type.BOOLEAN, description: 'true publica, false tira do site' } }, required: ['imovelId', 'publicar'] },
+  },
+  {
     name: 'o_que_esta_na_tela',
     description: 'Diz o que o usuário está vendo agora no CRM: qual tela, o texto e os números visíveis nela, e o lead que estiver aberto (com a aba e as últimas mensagens, se for o chat). Use SEMPRE que ele falar "esse", "essa", "aqui", "isso", "ele/ela" sem dizer o nome, "essa tela", "esse número", "esse relatório", ou pedir opinião/resumo do que está vendo.',
     parameters: { type: Type.OBJECT, properties: {} },
@@ -149,6 +169,7 @@ export function roteiro(o: { nomeAssistente: string; nomeUsuario: string; papel:
     '- Se pedirem pra abrir uma tela ou um lead, use abrir_tela / abrir_lead.',
     '- Use lembrar quando o usuário pedir pra guardar algo E também por conta própria quando ele contar algo que vale lembrar depois (preferência de cliente, combinado, prazo, informação útil do trabalho) — avise numa frase curta que anotou. Use recordar quando ele perguntar sobre algo guardado.',
     '- Câmera: quando o usuário liga a câmera, você recebe uma imagem por segundo e consegue ver o usuário e o que ele mostrar. Comente o que vê só quando for útil ou quando ele perguntar. Sem câmera ligada, diga que não está vendo nada.',
+    '- Configurar o CRM (Agente de IA, site, imóveis, roletas, follow-ups, templates): só dono e gerente. Primeiro ver_configuracao da área, depois alterar_configuracao / criar_item / publicar_imovel_no_site — tudo só prepara um cartão com o antes → depois; leia as mudanças e peça confirmação. Nunca apague nada por voz: pra excluir, abra a tela. Pergunte o que faltar (ex.: preço e bairro do imóvel) antes de preparar.',
     '- Contexto da tela: você não vê a tela como imagem; pra saber o que o usuário está olhando, chame o_que_esta_na_tela. Quando ele se referir a algo sem dar nome ("esse lead", "manda pra ele", "o que acha desse relatório"), chame primeiro o_que_esta_na_tela e use o que vier dela.',
     '- Janelas: abrir_lead abre a ficha; fechar_janela fecha a ficha ou a janela aberta; fechar_paineis fecha só os seus painéis.',
     '- Você não tem acesso à internet, só ao CRM.',

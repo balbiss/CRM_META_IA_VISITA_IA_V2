@@ -6,7 +6,8 @@ export type Painel = { id: string; titulo: string; conteudo: string; x: number; 
 export type AcaoPendente =
   | { tipo: 'tarefa'; resumo: string; titulo: string; quando: string; leadId?: string; descricao?: string }
   | { tipo: 'mover'; resumo: string; leadId: string; colunaId: string }
-  | { tipo: 'mensagem'; resumo: string; leadId: string; texto: string };
+  | { tipo: 'mensagem'; resumo: string; leadId: string; texto: string }
+  | { tipo: 'config'; resumo: string; executar: () => Promise<Record<string, unknown>> };
 export type ConfigAssistente = { disponivel: boolean; liberado: boolean; nome: string; voz: string; vozes: string[]; minutosMes: number; minutosUsados: number };
 export type Fala = { id: number; quem: 'voce' | 'assistente' | 'sistema'; texto: string; antiga?: boolean };
 

@@ -2,6 +2,7 @@ import { useAppStore, type RemoteMensagem, type RemoteTarefa } from '../../store
 import { apiFetch } from '../api';
 import type { Lead } from '../data';
 import { useAssistente, type AcaoPendente } from './estado';
+import { alterarConfiguracao, criarItem, publicarImovelNoSite, verConfiguracao } from './configuracao';
 
 /** Ferramentas do assistente de voz, executadas no navegador com os dados e as ações que o usuário
  *  já tem no CRM (corretor só tem os próprios leads carregados — as mesmas regras da tela).
@@ -60,6 +61,7 @@ export async function executarPendente(): Promise<Record<string, unknown>> {
       const ok = await s.criarTarefa({ titulo: a.titulo, venceEm: a.quando, leadId: a.leadId, descricao: a.descricao });
       return ok ? { feito: true, resumo: 'Tarefa criada: ' + a.resumo } : { erro: 'O CRM não aceitou a tarefa.' };
     }
+    if (a.tipo === 'config') return await a.executar();
     if (a.tipo === 'mover') {
       s.move(a.leadId, a.colunaId);
       return { feito: true, resumo: a.resumo };
@@ -97,6 +99,20 @@ export async function executarFerramenta(nome: string, a: Args, ctx: Ctx): Promi
   const s = st();
   const ui = useAssistente.getState();
   switch (nome) {
+    case 'ver_configuracao':
+    case 'alterar_configuracao':
+    case 'criar_item':
+    case 'publicar_imovel_no_site': {
+      if (s.me?.role !== 'dono' && s.me?.role !== 'gerente') return { erro: 'Só o dono ou o gerente podem ver e mudar as configurações do CRM.' };
+      try {
+        if (nome === 'ver_configuracao') return await verConfiguracao(String(a.area || ''));
+        if (nome === 'alterar_configuracao') return await alterarConfiguracao(String(a.area || ''), a.alvoId ? String(a.alvoId) : undefined, a.mudancas_json);
+        if (nome === 'criar_item') return await criarItem(String(a.area || ''), a.dados_json);
+        return await publicarImovelNoSite(String(a.imovelId || ''), a.publicar !== false);
+      } catch (e) {
+        return { erro: (e as Error).message || 'Falhou' };
+      }
+    }
     case 'o_que_esta_na_tela': {
       const rota = window.location.pathname;
       const tela = NOME_TELA[rota] || rota;
