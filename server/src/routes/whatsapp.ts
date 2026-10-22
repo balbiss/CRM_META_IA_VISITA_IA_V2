@@ -98,7 +98,8 @@ export function whatsappRouter(io: SocketServer) {
         if (!/@s\.whatsapp\.net|@c\.us/i.test(alt)) return;
         numeroRaw = alt;
       }
-      const numero = soDigitos(numeroRaw);
+      // Mensagem de aparelho conectado (WhatsApp Web/computador) vem com o nº do aparelho: "5512...:12@s.whatsapp.net".
+      const numero = soDigitos(numeroRaw.replace(/:\d+@/, '@'));
       const texto: string | null = p.body || p._data?.Message?.conversation || null;
       const waId: string | undefined = p.id;
       // Número de verdade tem no máximo 13 dígitos (55 + DDD + 9 + 8). Acima disso é lixo (LID não resolvido).
