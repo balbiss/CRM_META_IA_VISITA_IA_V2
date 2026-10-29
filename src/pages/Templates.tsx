@@ -31,7 +31,7 @@ export default function Templates() {
               </a>
             )}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button onClick={() => toast('Template "' + t.titulo + '" pronto para usar no chat')} style={{ flex: 1, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12, fontWeight: 600 }}>Usar no chat</button>
+              <button onClick={() => toast('No chat, digite / e escolha "' + t.titulo + '"')} style={{ flex: 1, padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12, fontWeight: 600 }}>Usar no chat</button>
               <button onClick={() => setEditando(t)} style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12 }}>Editar</button>
               <button onClick={() => delTpl(t.id)} style={{ padding: '7px 12px', border: '1px solid var(--line)', borderRadius: 7, background: 'none', fontSize: 12, color: 'var(--terra)' }}>Excluir</button>
             </div>
@@ -39,7 +39,7 @@ export default function Templates() {
         ))}
       </div>
       {templates.length === 0 && <p style={{ fontSize: 13, color: 'var(--muted)' }}>Nenhum template ainda — clique em "Novo template" pra criar o primeiro.</p>}
-      <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '18px 0 0' }}>Variáveis disponíveis: {'{nome}'}, {'{corretor}'}, {'{imovel}'} · cada corretor vê apenas os próprios templates.</p>
+      <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '18px 0 0' }}>Variáveis disponíveis: {'{nome}'}, {'{corretor}'}, {'{imovel}'} · cada corretor vê apenas os próprios templates. No chat (Conversas ou card do lead), digite / pra usar.</p>
 
       {editando && (
         <EditModal
