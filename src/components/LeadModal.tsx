@@ -65,6 +65,7 @@ export function LeadModal() {
   const [nota, setNota] = useState('');
   const [tarefaTitulo, setTarefaTitulo] = useState('');
   const [tarefaQuando, setTarefaQuando] = useState('');
+  const [prontasAbertas, setProntasAbertas] = useState(false);
 
   const L = leads.find(l => l.id === leadId);
   const chatMsgs = mapMsgs((leadId && chats[leadId]) || []);
@@ -111,9 +112,6 @@ export function LeadModal() {
     const ok = await criarTarefa({ titulo: tarefaTitulo.trim(), venceEm: new Date(tarefaQuando).toISOString(), leadId });
     if (ok) { setTarefaTitulo(''); setTarefaQuando(''); fetchEventosLead(leadId); }
   }
-
-
-  const [prontasAbertas, setProntasAbertas] = useState(false);
 
   return (
     <div onClick={closeLead} className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(8,17,31,.5)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
